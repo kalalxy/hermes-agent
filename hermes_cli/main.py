@@ -9268,15 +9268,40 @@ def cmd_update(args):
         sys.exit(0)
 
     # The sealed desktop payload runs the agent out of the app's signed
-    # resources; `hermes update` must refuse BEFORE any mutation. The
-    # stamp-derived install method is the whole guard (kshitijk4poor's
+    # resources; `hermes update` must never git-mutate it (kshitijk4poor's
     # live repro: a manifest-keyed guard defaulted a missing manifest to
     # "source" and staged 107 MB of *.hermes-update-staging debris INTO
-    # the signed app resources). A sealed tree cannot provision itself;
-    # the steward owns it.
+    # the signed app resources). But refusing outright is a dead end for
+    # CLI-first users — on win32 electron-updater artifacts, drive the
+    # same motion the in-app updater would: check the release feed,
+    # download + sha512-verify the new installer, then hand off to a
+    # detached helper that stops every Hermes process (this one included),
+    # runs the installer silently, and relaunches the GUI iff it was
+    # running. Anything that path cannot serve (non-Windows, no feed,
+    # offline, weird artifacts) raises SealedUpdateUnavailable and falls
+    # back to the steward refusal. The gate is the stamp alone — the
+    # mechanism field says electron-updater owns this artifact.
     if install_method == "desktop-app":
-        from installation.tree import steward_update_message
+        from installation.tree import read_build_info, steward_update_message
 
+        try:
+            mechanism = read_build_info(Path(PROJECT_ROOT)).get("updateMechanism")
+        except RuntimeError:
+            mechanism = None
+        if mechanism == "electron-updater":
+            from hermes_cli.sealed_update import (
+                SealedUpdateUnavailable,
+                cmd_update_sealed_desktop,
+            )
+
+            try:
+                sys.exit(cmd_update_sealed_desktop(args, Path(PROJECT_ROOT)))
+            except SealedUpdateUnavailable as exc:
+                logger.debug("sealed self-update unavailable: %s", exc)
+            except Exception as exc:
+                # Feed/network/download failures must not strand the user
+                # with a stack trace; say what failed, then the steward answer.
+                print(f"⚠ Could not self-update from the release feed: {exc}")
         print(steward_update_message("desktop-app"))
         sys.exit(1)
 

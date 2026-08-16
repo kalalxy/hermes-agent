@@ -12,12 +12,15 @@ the guard into ``_cmd_update_impl``, which ran the pre-update backup and
 staged an update INTO the app resources (``*.hermes-update-staging``
 debris beside every ``repo/`` top-level dir — observed on a live v0.27.0
 win-arm64 bundled install). These tests pin the fixed contract: a
-``desktop-app`` sealed tree refuses BEFORE any mutation, with the
-steward message, regardless of manifest presence.
+``desktop-app`` sealed tree never reaches the update body; on win32
+electron-updater artifacts the CLI first attempts the feed-driven
+self-update, and the steward refusal is the fallback for everything
+``SealedUpdateUnavailable`` covers.
 
-Vendored from kshitijk4poor/hermes-agent@restack-fix-sealed-refusal,
-adapted to the stamp-pure ladder (the stamp's required updateMechanism
-is the classification fact; the manifest is on its way out).
+Vendored from kshitijk4poor/hermes-agent@restack-fix-sealed-refusal and
+@restack-sealed-self-update, adapted to the stamp-pure ladder (the
+stamp's required updateMechanism is the classification fact; the
+manifest never exists).
 """
 
 from types import SimpleNamespace
@@ -38,8 +41,8 @@ def _args(**overrides):
 class TestSealedDesktopUpdateRefusal:
     def test_sealed_payload_refuses(self, capsys):
         """The live-bug shape: stamp says desktop-app (no manifest exists —
-        the manifest is dead). Must refuse, print the steward message, and
-        never reach the update body."""
+        the manifest is dead). No electron-updater mechanism resolvable →
+        straight to the steward refusal; never the update body."""
         with (
             patch("hermes_cli.config.detect_install_method", return_value="desktop-app"),
             patch("hermes_cli.main._cmd_update_impl") as impl,
@@ -52,6 +55,52 @@ class TestSealedDesktopUpdateRefusal:
         # The steward refusal, not the git/source refusal.
         assert "desktop app" in out
         assert "git pull" not in out
+
+    def test_electron_updater_tree_attempts_self_update_first(self):
+        """updateMechanism electron-updater: the CLI drives the feed-driven
+        self-update; the refusal is only the fallback. (Platform gating
+        lives inside cmd_update_sealed_desktop — mocked here, so this
+        contract test runs on every host.)"""
+        with (
+            patch("hermes_cli.config.detect_install_method", return_value="desktop-app"),
+            patch(
+                "installation.tree.read_build_info",
+                return_value={"updateMechanism": "electron-updater"},
+            ),
+            patch(
+                "hermes_cli.sealed_update.cmd_update_sealed_desktop", return_value=0
+            ) as selfupdate,
+            patch("hermes_cli.main._cmd_update_impl") as impl,
+        ):
+            with pytest.raises(SystemExit) as exc:
+                cmd_update(_args())
+        assert exc.value.code == 0
+        selfupdate.assert_called_once()
+        impl.assert_not_called()
+
+    def test_refusal_only_when_self_update_unavailable(self, capsys):
+        """SealedUpdateUnavailable (no feed, offline, weird artifact) falls
+        back to the steward refusal — no stack trace, exit 1."""
+        from hermes_cli.sealed_update import SealedUpdateUnavailable
+
+        with (
+            patch("hermes_cli.config.detect_install_method", return_value="desktop-app"),
+            patch(
+                "installation.tree.read_build_info",
+                return_value={"updateMechanism": "electron-updater"},
+            ),
+            patch(
+                "hermes_cli.sealed_update.cmd_update_sealed_desktop",
+                side_effect=SealedUpdateUnavailable("test: path unavailable"),
+            ),
+            patch("hermes_cli.main._cmd_update_impl") as impl,
+        ):
+            with pytest.raises(SystemExit) as exc:
+                cmd_update(_args())
+        assert exc.value.code == 1
+        impl.assert_not_called()
+        out = capsys.readouterr().out
+        assert "desktop app" in out
 
     def test_materialized_bundled_checkout_is_just_a_checkout_now(self):
         """The manifest is dead: nothing can mark a checkout 'bundled'
