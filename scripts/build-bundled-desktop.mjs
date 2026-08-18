@@ -179,8 +179,8 @@ if (!tag) {
     fail("no --tag=vX.Y.Z given and HEAD is not at an exact release tag")
   }
 }
-if (!/^v(?:0|[1-9]\d{0,2})\.\d+\.\d+(?:-nightly\.20\d{6})?$/.test(tag)) {
-  fail(`'${tag}' is not a release tag (vX.Y.Z or vX.Y.0-nightly.YYYYMMDD)`)
+if (!/^v(?:0|[1-9]\d{0,2})\.\d+\.\d+(?:-nightly\.20\d{6}(?:\d{6})?)?$/.test(tag)) {
+  fail(`'${tag}' is not a release tag (vX.Y.Z or vX.Y.0-nightly.YYYYMMDDHHMMSS)`)
 }
 
 // The canonical Hermes version is owned by pyproject.toml (the same rule
@@ -192,7 +192,7 @@ if (!/^v(?:0|[1-9]\d{0,2})\.\d+\.\d+(?:-nightly\.20\d{6})?$/.test(tag)) {
 //
 // Nightly tags are the one exception: no version-bump commit exists (the
 // tag points at plain HEAD), so the TAG is the version truth — the app
-// announces v0.28.0-nightly.YYYYMMDD, which is what makes the nightly
+// announces v0.28.0-nightly.YYYYMMDDHHMMSS, which is what makes the nightly
 // channel's semver ordering work (outversions stable 0.27.x, loses to
 // stable 0.28.0).
 const pyprojectVersion = fs
