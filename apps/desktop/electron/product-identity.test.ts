@@ -16,6 +16,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.HERMES_DESKTOP_VARIANT
+  delete process.env.HERMES_PAYLOAD_TAG
   vi.resetModules()
 })
 
@@ -43,4 +44,22 @@ test('light identity is fully distinct from the full identity', async () => {
   for(const prop of [...Object.keys(light), ...Object.keys(full)]) {
     assert.notEqual(light[prop], full[prop])
   }
+})
+
+test('a nightly payload tag moves BOTH variants onto their nightly feed channel', async () => {
+  process.env.HERMES_PAYLOAD_TAG = 'v0.28.0-nightly.20260818'
+  const full = await identityForVariant(undefined)
+  assert.equal(full.channel, 'nightly')
+
+  process.env.HERMES_PAYLOAD_TAG = 'v0.28.0-nightly.20260818'
+  const light = await identityForVariant('light')
+  assert.equal(light.channel, 'light-nightly')
+})
+
+test('stable tags and tagless dev builds publish to the stable channels', async () => {
+  process.env.HERMES_PAYLOAD_TAG = 'v0.28.0'
+  assert.equal((await identityForVariant(undefined)).channel, 'latest')
+
+  delete process.env.HERMES_PAYLOAD_TAG
+  assert.equal((await identityForVariant('light')).channel, 'light')
 })
