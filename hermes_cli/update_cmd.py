@@ -490,7 +490,7 @@ def _gateway_prompt(prompt_text: str, default: str = "", timeout: float = 300.0)
     while _time.monotonic() < deadline:
         if response_path.exists():
             try:
-                answer = response_path.read_text(encoding="utf-8").strip()
+                answer = response_path.read_text(encoding="utf-8-sig").strip()
                 response_path.unlink(missing_ok=True)
                 prompt_path.unlink(missing_ok=True)
                 return answer if answer else default
@@ -2253,7 +2253,7 @@ def _npm_manifest_paths() -> tuple[Path, ...]:
     root_pkg = _m().PROJECT_ROOT / "package.json"
     paths = [_m().PROJECT_ROOT / "package-lock.json", root_pkg]
     try:
-        workspaces = json.loads(root_pkg.read_text(encoding="utf-8")).get(
+        workspaces = json.loads(root_pkg.read_text(encoding="utf-8-sig")).get(
             "workspaces", []
         )
         if isinstance(workspaces, dict):  # legacy {"packages": [...]} form
@@ -2761,7 +2761,7 @@ def _ensure_fhs_path_guard() -> None:
         if not cfg.is_file():
             continue
         try:
-            existing = cfg.read_text(errors="replace", encoding="utf-8")
+            existing = cfg.read_text(errors="replace", encoding="utf-8-sig")
         except OSError:
             continue
         # Idempotency: skip if any uncommented PATH= line already references
@@ -2775,7 +2775,7 @@ def _ensure_fhs_path_guard() -> None:
         if already_guarded:
             continue
         try:
-            with cfg.open("a", encoding="utf-8") as f:
+            with cfg.open("a", encoding="utf-8-sig") as f:
                 f.write("\n" + path_comment + "\n" + path_line + "\n")
         except OSError as e:
             print(f"  ⚠ Could not update {cfg}: {e}")

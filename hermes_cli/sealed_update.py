@@ -83,7 +83,7 @@ def read_feed_config(feed_file: Path) -> dict:
     that is what the desktop release workflow publishes."""
     import yaml
 
-    cfg = yaml.safe_load(feed_file.read_text(encoding="utf-8")) or {}
+    cfg = yaml.safe_load(feed_file.read_text(encoding="utf-8-sig")) or {}
     if cfg.get("provider") != "github" or not cfg.get("owner") or not cfg.get("repo"):
         raise SealedUpdateUnavailable(
             f"unsupported update feed in {feed_file}: provider={cfg.get('provider')!r}"
@@ -132,7 +132,7 @@ def parse_version(v: str) -> tuple:
 def installed_version(repo_root: Path) -> str:
     import json
 
-    stamp = json.loads((repo_root / "install-stamp.json").read_text(encoding="utf-8"))
+    stamp = json.loads((repo_root / "install-stamp.json").read_text(encoding="utf-8-sig"))
     return stamp.get("baseVersion") or stamp.get("displayVersion") or "0"
 
 

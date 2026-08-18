@@ -236,7 +236,7 @@ def orphaned_installs() -> list[tuple[Path, str]]:
             continue
         try:
             recorded = json.loads(
-                (entry / "install.json").read_text(encoding="utf-8")
+                (entry / "install.json").read_text(encoding="utf-8-sig")
             ).get("root", "")
         except (OSError, ValueError):
             orphans.append((entry, "<unreadable install.json>"))
@@ -276,7 +276,7 @@ def orphaned_store_entries() -> list[tuple[Path, int]]:
         for entry in installs.iterdir():
             try:
                 recorded = json.loads(
-                    (entry / "install.json").read_text(encoding="utf-8")
+                    (entry / "install.json").read_text(encoding="utf-8-sig")
                 ).get("root", "")
             except (OSError, ValueError):
                 continue
@@ -348,7 +348,7 @@ def record_path(project_root: Path, scope: str) -> Path:
 
 def read_last_known(path: Path) -> dict:
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -419,7 +419,7 @@ class _RecordLock:
 
     def _is_stale(self) -> bool:
         try:
-            body = json.loads(self.path.read_text(encoding="utf-8"))
+            body = json.loads(self.path.read_text(encoding="utf-8-sig"))
             started = float(body.get("startedAt", 0))
         except (OSError, ValueError):
             # Unreadable lock: age it by mtime instead.

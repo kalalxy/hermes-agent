@@ -5120,7 +5120,7 @@ def _read_flat_json(provider: ProviderConfigSchema) -> Dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         _log.warning("Failed to read memory provider config from %s", path, exc_info=True)
         return {}
@@ -5172,7 +5172,7 @@ def _honcho_read_sources() -> tuple[Dict[str, Any], str, Dict[str, Any]]:
     raw: Dict[str, Any] = {}
     if path.exists():
         try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
+            loaded = json.loads(path.read_text(encoding="utf-8-sig"))
             raw = loaded if isinstance(loaded, dict) else {}
         except Exception:
             _log.warning("Failed to read Honcho config from %s", path, exc_info=True)
@@ -5282,7 +5282,7 @@ def _write_provider_honcho(provider: ProviderConfigSchema, values: Dict[str, str
         cfg: Dict[str, Any] = {}
         if path.exists():
             try:
-                loaded = json.loads(path.read_text(encoding="utf-8"))
+                loaded = json.loads(path.read_text(encoding="utf-8-sig"))
                 cfg = loaded if isinstance(loaded, dict) else {}
             except Exception:
                 _log.warning("Failed to read Honcho config from %s", path, exc_info=True)
@@ -5815,7 +5815,7 @@ def _read_json_file(path: Path) -> Dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception:
         _log.debug("Failed to read JSON config from %s", path, exc_info=True)
         return {}
@@ -8677,7 +8677,7 @@ def _whatsapp_phone_from_identifier(value: Any) -> str | None:
 def _whatsapp_linked_account_from_session(session_path: Path) -> tuple[str | None, str | None, str | None]:
     creds_path = session_path / "creds.json"
     try:
-        payload = json.loads(creds_path.read_text(encoding="utf-8"))
+        payload = json.loads(creds_path.read_text(encoding="utf-8-sig"))
     except Exception:
         return None, None, None
 
@@ -12257,7 +12257,7 @@ def _profile_env_value(home: Path, key: str) -> str:
         env_path = home / ".env"
         if not env_path.is_file():
             return ""
-        for line in env_path.read_text(encoding="utf-8").splitlines():
+        for line in env_path.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
@@ -14438,7 +14438,7 @@ async def get_config_raw(profile: Optional[str] = None):
             path = get_config_path()
         if not path.exists():
             return {"yaml": "", "path": str(path)}
-        return {"yaml": path.read_text(encoding="utf-8"), "path": str(path)}
+        return {"yaml": path.read_text(encoding="utf-8-sig"), "path": str(path)}
 
     return await asyncio.to_thread(_run)
 
@@ -15516,7 +15516,7 @@ def _active_session_file_for_channel(app: "FastAPI", channel: str) -> Path:
 
 def _read_active_session_file(path: Path) -> Optional[str]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -16539,7 +16539,7 @@ def mount_spa(application: FastAPI):
         auth scheme for /api/pty and /api/ws (ticket vs token).
         """
         try:
-            html = _index_path.read_text(encoding="utf-8")
+            html = _index_path.read_text(encoding="utf-8-sig")
         except OSError:
             # The dist dir existed at mount time but index.html is missing or
             # unreadable now (partial build, wiped dist, permissions). Without
@@ -16609,7 +16609,7 @@ def mount_spa(application: FastAPI):
         ):
             return JSONResponse({"error": "not found"}, status_code=404)
         prefix = _normalise_prefix(request.headers.get("x-forwarded-prefix"))
-        css = css_path.read_text(encoding="utf-8")
+        css = css_path.read_text(encoding="utf-8-sig")
         if prefix:
             for asset_dir in ("/fonts/", "/fonts-terminal/", "/ds-assets/", "/assets/"):
                 css = css.replace(f"url({asset_dir}", f"url({prefix}{asset_dir}")
@@ -16917,7 +16917,7 @@ def _discover_user_themes() -> list:
     result = []
     for f in sorted(themes_dir.glob("*.yaml")):
         try:
-            data = yaml.safe_load(f.read_text(encoding="utf-8"))
+            data = yaml.safe_load(f.read_text(encoding="utf-8-sig"))
         except Exception:
             continue
         normalised = _normalise_theme_definition(data)
@@ -17112,7 +17112,7 @@ def _discover_dashboard_plugins() -> list:
             if not manifest_file.exists():
                 continue
             try:
-                data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                data = json.loads(manifest_file.read_text(encoding="utf-8-sig"))
                 name = data.get("name", child.name)
                 if name in seen_names:
                     continue

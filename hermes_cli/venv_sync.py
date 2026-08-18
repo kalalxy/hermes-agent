@@ -131,7 +131,7 @@ def _managed_uv(project_root: Path) -> str | None:
     )
     try:
         facts = json.loads(
-            (runtime_dir / "runtimes.json").read_text(encoding="utf-8")
+            (runtime_dir / "runtimes.json").read_text(encoding="utf-8-sig")
         )
         rel = facts["tools"]["uv"]["path"]
     except (OSError, ValueError, KeyError, TypeError):
@@ -149,7 +149,7 @@ def _managed_uv(project_root: Path) -> str | None:
 
 def read_stamp(project_root: Path) -> dict:
     try:
-        data = json.loads(_stamp_path(project_root).read_text(encoding="utf-8"))
+        data = json.loads(_stamp_path(project_root).read_text(encoding="utf-8-sig"))
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}

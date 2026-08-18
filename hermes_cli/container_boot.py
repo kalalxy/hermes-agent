@@ -395,7 +395,7 @@ def _read_desired_state(profile_dir: Path) -> str | None:
     if not state_file.exists():
         return None
     try:
-        data = json.loads(state_file.read_text(encoding="utf-8"))
+        data = json.loads(state_file.read_text(encoding="utf-8-sig"))
         desired_state = data.get("desired_state")
         if desired_state is not None:
             return desired_state
@@ -564,7 +564,7 @@ def _write_reconcile_log(
         log.warning("could not rotate %s: %s", log_path, exc)
 
     ts = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    with log_path.open("a", encoding="utf-8") as f:
+    with log_path.open("a", encoding="utf-8-sig") as f:
         for a in actions:
             f.write(
                 f"{ts} profile={a.profile} prior_state={a.prior_state} "

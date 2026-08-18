@@ -1726,7 +1726,7 @@ def write_recovery_report(path: Path, report: dict[str, Any]) -> Path:
     """Write a JSON report without overwriting an existing file."""
 
     destination = _resolved_output_path(path)
-    with destination.open("x", encoding="utf-8") as handle:
+    with destination.open("x", encoding="utf-8-sig") as handle:
         json.dump(report, handle, indent=2, sort_keys=True)
         handle.write("\n")
     return destination

@@ -347,7 +347,7 @@ def step_expose_cli() -> dict:
                 f"{exec_line}\n"
             )
             try:
-                existing = target.read_text(encoding="utf-8")
+                existing = target.read_text(encoding="utf-8-sig")
             except (FileNotFoundError, UnicodeDecodeError, OSError):
                 existing = None
             if existing == body:

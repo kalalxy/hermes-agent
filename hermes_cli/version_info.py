@@ -100,7 +100,7 @@ def _stamp_version_info() -> VersionInfo | None:
     if stamp_file is None:
         return None
     try:
-        raw = stamp_file.read_text(encoding="utf-8")
+        raw = stamp_file.read_text(encoding="utf-8-sig")
         data = json.loads(raw)
     except (OSError, json.JSONDecodeError):
         return None
