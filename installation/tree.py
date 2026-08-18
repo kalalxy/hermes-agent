@@ -49,7 +49,9 @@ CHANNEL_MAIN = "main"
 CHANNEL_STABLE = "stable"
 _VALID_CHANNELS = (CHANNEL_MAIN, CHANNEL_STABLE)
 
-# What `hermes update` says in a sealed tree, per steward. The fallback
+# What `hermes update` says in a sealed tree, per steward — THE single
+# refusal table (config.format_docker_update_message and the update
+# command's docker/nix/desktop-app branches all read it). The fallback
 # covers stewards this build does not know (a newer package-manager value
 # read by older code).
 STEWARD_UPDATE_MESSAGES = {
@@ -58,12 +60,31 @@ STEWARD_UPDATE_MESSAGES = {
         "\n"
         "Manage updates from within the desktop app."
     ),
-    STEWARD_DOCKER: (
-        "✗ This Hermes runs from a Docker image.\n"
-        "\n"
-        "The image is immutable. Pull the new image to update:\n"
-        "  docker pull nousresearch/hermes-agent:latest"
-    ),
+    STEWARD_DOCKER: """\
+✗ ``hermes update`` doesn't apply inside the Docker container.
+
+Hermes Agent runs as a published image (nousresearch/hermes-agent), not a
+git checkout — the container has no working tree to pull into.  Update by
+pulling a fresh image and restarting your container instead:
+
+  docker pull nousresearch/hermes-agent:latest
+  # then restart whatever started the container, e.g.:
+  docker compose up -d --force-recreate hermes-agent
+  # or, for ad-hoc runs, exit the current container and `docker run` again
+
+Verify the new version after restart:
+  docker run --rm nousresearch/hermes-agent:latest --version
+
+Notes:
+  • If you pinned a specific tag (e.g. ``:v0.14.0``) the ``:latest`` tag
+    won't move your container — pull the newer tag you actually want, or
+    switch to ``:latest`` / ``:main`` for rolling updates.  See available
+    tags at https://hub.docker.com/r/nousresearch/hermes-agent/tags
+  • Your config and session history live under ``$HERMES_HOME`` (``/opt/data``
+    in the container, typically bind-mounted from the host) and persist
+    across image upgrades — re-pulling doesn't lose any state.
+  • Running a fork?  Build your own image with this repo's ``Dockerfile``
+    and replace the ``docker pull`` step with your build/push pipeline.""",
     STEWARD_NIX: (
         "✗ This Hermes runs from the Nix store.\n"
         "\n"

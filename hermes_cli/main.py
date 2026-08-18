@@ -9212,25 +9212,20 @@ def cmd_update(args):
     runs the update, then restores stdio on the way out (even on
     ``sys.exit`` or unhandled exceptions).
     """
-    from hermes_cli.config import (
-        detect_install_method,
-        format_docker_update_message,
-        recommended_update_command_for_method,
-    )
+    from hermes_cli.config import detect_install_method
 
-    # Docker users can't ``git pull`` — the image excludes ``.git`` from
-    # the build context.  Bail with a friendly explanation pointing at
-    # ``docker pull`` BEFORE any of the apply-path / check-path branches
-    # below get a chance to error out with misleading "Not a git
-    # repository" text.  See format_docker_update_message() for the full
-    # rationale and tag-pinning / config-persistence notes.
+    # Sealed trees (docker, nix, desktop-app — any steward) can't `git
+    # pull`: the steward replaces the tree wholesale. ONE refusal table
+    # (installation.tree.STEWARD_UPDATE_MESSAGES) answers all of them,
+    # BEFORE any apply-path branch below can error out with misleading
+    # "Not a git repository" text. recommended_update_command_for_method
+    # stays a separate surface on purpose: it is the one-line command hint
+    # (doctor, /version), not the full refusal.
     install_method = detect_install_method(PROJECT_ROOT)
-    if install_method == "docker":
-        print(format_docker_update_message())
-        sys.exit(1)
+    if install_method in ("docker", "nix"):
+        from installation.tree import steward_update_message
 
-    if install_method == "nix":
-        print(recommended_update_command_for_method(install_method))
+        print(steward_update_message(install_method))
         sys.exit(1)
 
     # A random source checkout (a .git tree outside the managed install
