@@ -12,7 +12,8 @@ code has two failure modes:
   keep resolving it across reboots.
 
 The fix per call site is one of ``installation.nodejs.node_path()``,
-``installation.env.managed_path_dirs()``, ``resolve_uv()``, or ``ensure_uv()``.
+``installation.env.managed_path_dirs()``, ``installation.git.git_path()``,
+``resolve_uv()``, or ``ensure_uv()``.
 This test is
 the ratchet that stops a new bare lookup from being added back.
 
@@ -35,7 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Runtimes Hermes provisions into HERMES_HOME and must therefore resolve
 # through a managed-aware helper rather than PATH.
-_MANAGED_COMMANDS = frozenset({"uv", "node", "npm", "npx"})
+_MANAGED_COMMANDS = frozenset({"uv", "node", "npm", "npx", "git"})
 
 # Directories that are not Hermes-owned subprocess code: plugins ship their own
 # resolution policy, tests assert against PATH deliberately, and skills/scripts
@@ -70,6 +71,12 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("hermes_cli/gateway.py", "node"): (
         "Fallback rung of _append_node_dir_for_service(), after the managed "
         "dirs from managed_path_dirs() are already appended."
+    ),
+    ("installation/git.py", "git"): (
+        "probe_system_git() IS the sanctioned system-git probe, and the only "
+        "one: git_path() calls it after the managed git, and it rejects the "
+        "macOS xcode-select shim and anything under SYSTEM_GIT_FLOOR. Every "
+        "other git call site in the tree resolves through git_path()."
     ),
 }
 
@@ -145,6 +152,7 @@ def test_no_unreviewed_bare_managed_runtime_lookups():
         "Use instead:\n"
         "  uv       -> managed_uv.resolve_uv() (lookup) or ensure_uv() (may install)\n"
         "  node/npm -> installation.nodejs.node_path() / npm_path()\n"
+        "  git      -> installation.git.git_path()\n"
         "  PATH env -> installation.env.managed_path_dirs()\n"
         "If PATH really is the right question, add the site to _ALLOWED with a "
         "reason."
@@ -173,6 +181,8 @@ def test_allowlist_has_no_stale_entries():
         ("installation.nodejs", "npm_install"),
         ("installation.env", "managed_path_dirs"),
         ("installation.env", "with_managed_runtimes"),
+        ("installation.git", "git_path"),
+        ("installation.git", "git_install_guidance"),
     ],
 )
 def test_managed_node_helpers_exist(module, helper):

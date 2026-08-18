@@ -262,6 +262,14 @@ def _spawn_pyright(root: str, ctx: ServerContext) -> Optional[SpawnSpec]:
 
 
 def _detect_python(root: str) -> Optional[str]:
+    """Locate the USER PROJECT's interpreter for pyright, not Hermes's own.
+
+    Out of managed-runtime scope on purpose. Hermes resolves its own
+    interpreter through hermes_constants, but pyright has to type-check the
+    project the user opened, against that project's installed packages. So
+    the answer here is whatever venv sits beside their code, or the one they
+    activated — the managed runtime dir would be the wrong answer.
+    """
     candidates = []
     if os.environ.get("VIRTUAL_ENV"):
         candidates.append(os.environ["VIRTUAL_ENV"])
