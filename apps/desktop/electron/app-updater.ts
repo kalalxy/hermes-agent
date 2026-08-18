@@ -16,6 +16,7 @@
 import type { AppUpdater } from 'electron-updater'
 
 import type { ArtifactKind } from './install-stamp'
+import { PRODUCT_IDENTITY } from './product-identity'
 
 export interface UpdaterGateFacts {
   stampPayload: ArtifactKind
@@ -118,9 +119,13 @@ export async function checkAppUpdate(
 
   // electron-updater's channel property selects which <channel>.yml the
   // check reads. Set it on every check: the user can flip the per-install
-  // record between two checks of one app session. allowPrerelease rides
-  // along — nightly artifacts publish as GitHub prereleases.
-  updater.channel = channel === 'nightly' ? 'nightly' : null
+  // record between two checks of one app session. The nightly feed name is
+  // per-variant (nightly.yml for Hermes, light-nightly.yml for Light);
+  // null restores the baked default (latest.yml / light.yml — whatever
+  // app-update.yml says). allowPrerelease rides along — nightly artifacts
+  // publish as GitHub prereleases.
+  updater.channel =
+    channel === 'nightly' ? (PRODUCT_IDENTITY.light ? 'light-nightly' : 'nightly') : null
   updater.allowPrerelease = channel === 'nightly'
 
   const result = await updater.checkForUpdates()
