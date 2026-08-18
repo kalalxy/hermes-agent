@@ -69,8 +69,9 @@ class TestLatestReleaseTagFromLsRemote:
 
 
 class _Args:
-    def __init__(self, branch=None):
+    def __init__(self, branch=None, channel=None):
         self.branch = branch
+        self.channel = channel
 
 
 class TestStableChannelActive:
@@ -78,20 +79,43 @@ class TestStableChannelActive:
         """--branch means main-style behavior regardless of channel config."""
         assert _stable_channel_active(_Args(branch="bb/gui")) is False
 
-    def test_config_stable_activates(self, tmp_path):
-        with patch("hermes_cli.config.load_config", return_value={"update": {"channel": "stable"}}), \
-             patch("hermes_cli.install_manifest.install_manifest_path",
-                   return_value=tmp_path / ".hermes-install.json"):
+    def test_transient_channel_flag_wins(self):
+        """--channel is the per-invocation override (--set-channel persists);
+        no config read happens when it is present."""
+        assert _stable_channel_active(_Args(channel="stable")) is True
+        assert _stable_channel_active(_Args(channel="main")) is False
+        # nightly on a source tree normalizes to main, never stable.
+        assert _stable_channel_active(_Args(channel="nightly")) is False
+
+    def test_per_install_record_activates(self, tmp_path, monkeypatch):
+        from hermes_cli.update_channel import install_id
+
+        root = tmp_path / "install"
+        root.mkdir()
+        (root / "install-stamp.json").write_text(
+            '{"schemaVersion": 2, "updateMechanism": "self"}'
+        )
+        config = {
+            "update": {"installs": {install_id(root): {"path": str(root), "channel": "stable"}}}
+        }
+        import hermes_cli.update_cmd as update_cmd
+
+        monkeypatch.setattr(update_cmd._m(), "PROJECT_ROOT", root)
+        with patch("hermes_cli.config.load_config", return_value=config):
             assert _stable_channel_active(_Args()) is True
 
-    def test_default_config_stays_main(self, tmp_path):
-        with patch("hermes_cli.config.load_config", return_value={"update": {"channel": "auto"}}), \
-             patch("hermes_cli.install_manifest.install_manifest_path",
-                   return_value=tmp_path / ".hermes-install.json"):
+    def test_no_record_stays_main(self, tmp_path, monkeypatch):
+        root = tmp_path / "install"
+        root.mkdir()
+        (root / "install-stamp.json").write_text(
+            '{"schemaVersion": 2, "updateMechanism": "self"}'
+        )
+        import hermes_cli.update_cmd as update_cmd
+
+        monkeypatch.setattr(update_cmd._m(), "PROJECT_ROOT", root)
+        with patch("hermes_cli.config.load_config", return_value={"update": {"installs": {}}}):
             assert _stable_channel_active(_Args()) is False
 
-    def test_config_failure_defaults_to_main(self, tmp_path):
-        with patch("hermes_cli.config.load_config", side_effect=RuntimeError("boom")), \
-             patch("hermes_cli.install_manifest.install_manifest_path",
-                   return_value=tmp_path / ".hermes-install.json"):
+    def test_config_failure_defaults_to_main(self):
+        with patch("hermes_cli.config.load_config", side_effect=RuntimeError("boom")):
             assert _stable_channel_active(_Args()) is False

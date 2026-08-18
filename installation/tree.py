@@ -45,10 +45,6 @@ MECHANISM_ELECTRON_UPDATER = "electron-updater"
 MECHANISM_EXTERNAL = "external"
 UPDATE_MECHANISMS = (MECHANISM_SELF, MECHANISM_ELECTRON_UPDATER, MECHANISM_EXTERNAL)
 
-CHANNEL_MAIN = "main"
-CHANNEL_STABLE = "stable"
-_VALID_CHANNELS = (CHANNEL_MAIN, CHANNEL_STABLE)
-
 # What `hermes update` says in a sealed tree, per steward — THE single
 # refusal table (config.format_docker_update_message and the update
 # command's docker/nix/desktop-app branches all read it). The fallback
@@ -291,20 +287,3 @@ def install_method(project_root: Path) -> str:
     if info and info.get("updateMechanism") == MECHANISM_SELF:
         return "git"
     return "source"
-
-
-def resolve_update_channel(config: Optional[dict] = None) -> str:
-    """The effective update channel for a git checkout.
-
-    ``update.channel`` from config.yaml when it is ``stable`` or ``main``;
-    anything else (missing, ``auto``, unknown) means ``main``. Sealed trees
-    never ask: their stewards own versioning.
-    """
-    configured = None
-    if isinstance(config, dict):
-        update_cfg = config.get("update")
-        if isinstance(update_cfg, dict):
-            configured = update_cfg.get("channel")
-    if isinstance(configured, str) and configured.strip().lower() in _VALID_CHANNELS:
-        return configured.strip().lower()
-    return CHANNEL_MAIN

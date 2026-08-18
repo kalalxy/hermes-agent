@@ -9231,45 +9231,53 @@ def cmd_update(args):
     # A random source checkout (a .git tree outside the managed install
     # roots) is somebody's working tree. `hermes update` would stash local
     # changes and yank it to the update branch — refuse and point at git.
-    # --eject on a source tree is also a no-op, so refuse before it too.
     if install_method == "source":
         print(f"✗ This is a git checkout at {PROJECT_ROOT},")
         print("  not the managed install. Update it like any working tree:")
         print("    git pull")
         sys.exit(1)
 
-    # --eject runs BEFORE the bundled-install refusal below. The eject
-    # operation is the one update operation that must work on a bundled
-    # install. It is the exit from desktop management. On source installs
-    # it only sets the channel or does nothing.
-    if getattr(args, "eject", False):
-        from hermes_cli.update_cmd import cmd_update_eject
+    # --install-id / --set-channel work on any non-external install and
+    # never touch the tree — handle them before the sealed refusal so the
+    # desktop About page and channel switching work from a bundled CLI.
+    if getattr(args, "install_id", False):
+        from hermes_cli.update_channel import install_id
 
-        sys.exit(cmd_update_eject(args))
+        print(f"{install_id(PROJECT_ROOT)} ({PROJECT_ROOT})")
+        sys.exit(0)
 
-    # Bundled desktop installs run the agent out of the app's signed
-    # resources. If `hermes update` changes that tree, the tree no longer
-    # agrees with the stamped tag of the shell. Refuse and point at the
-    # in-app updater.
-    #
-    # TWO detectors, deliberately OR'd (kshitijk4poor's live repro: the
-    # manifest's missing-file default is installMode "source", so the
-    # sealed resources-resident payload — which by design ships NO
-    # .hermes-install.json — sailed past a manifest-only guard into
-    # _cmd_update_impl and staged 107 MB of *.hermes-update-staging debris
-    # INTO the signed app resources). The stamp-derived install method
-    # covers the sealed payload; the manifest covers materialized bundled
-    # checkouts. A sealed tree cannot provision itself; the steward owns it.
-    from hermes_cli.install_manifest import format_bundled_update_message, is_bundled_install
+    if getattr(args, "set_channel", None):
+        from hermes_cli.update_channel import (
+            CHANNEL_NIGHTLY,
+            nightly_normalized_note,
+            set_install_channel,
+        )
 
+        try:
+            sha16 = set_install_channel(args.set_channel, PROJECT_ROOT)
+        except ValueError as exc:
+            print(f"✗ {exc}")
+            sys.exit(1)
+        print(f"✓ Channel '{args.set_channel}' recorded for install {sha16}.")
+        if args.set_channel == CHANNEL_NIGHTLY:
+            if install_method == "git":
+                print(nightly_normalized_note())
+            else:
+                print("⚠ Nightly builds move fast: expect forward-incompatible")
+                print("  state — data written by newer code may not load in stable.")
+        sys.exit(0)
+
+    # The sealed desktop payload runs the agent out of the app's signed
+    # resources; `hermes update` must refuse BEFORE any mutation. The
+    # stamp-derived install method is the whole guard (kshitijk4poor's
+    # live repro: a manifest-keyed guard defaulted a missing manifest to
+    # "source" and staged 107 MB of *.hermes-update-staging debris INTO
+    # the signed app resources). A sealed tree cannot provision itself;
+    # the steward owns it.
     if install_method == "desktop-app":
         from installation.tree import steward_update_message
 
         print(steward_update_message("desktop-app"))
-        sys.exit(1)
-
-    if is_bundled_install(PROJECT_ROOT):
-        print(format_bundled_update_message())
         sys.exit(1)
 
     if getattr(args, "check", False):

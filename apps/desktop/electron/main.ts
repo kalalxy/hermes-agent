@@ -59,7 +59,7 @@ import type { ConnectionMode, ModeAvailability } from './backends'
 import { detectRemoteDisplay, isWindowsBinaryPathInWsl, isWslEnvironment } from './bootstrap-platform'
 import { decideBootstrapRepair } from './bootstrap-repair-guard'
 import { runBootstrap } from './bootstrap-runner'
-import { findEmbeddedPython, latestReleaseFromLsRemote, resolvePayload, updateChannelFromConfig } from './bundled-runtime'
+import { findEmbeddedPython, installIdForRoot, latestReleaseFromLsRemote, resolvePayload, updateChannelFromConfig } from './bundled-runtime'
 import { applyConnectionChange, resolveTerminalConnection } from './connection-apply'
 import {
   authModeFromStatus,
@@ -2709,10 +2709,22 @@ async function checkStableChannelUpdates() {
   }
 }
 
+// Python's Path.resolve() equivalent for install-id derivation: realpath
+// when the path exists, plain resolve otherwise. Must stay byte-compatible
+// with boot_bootstrap._install_key or the CLI and the app would compute two
+// different ids for one install.
+function canonicalizeInstallPath(p: string): string {
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    return path.resolve(p)
+  }
+}
+
 async function checkUpdates() {
   // Bundled installs update through the app updater (GitHub Releases feed),
-  // not through git. The gate reads the install manifest, so an ejected
-  // checkout falls through to the git paths below.
+  // not through git. The gate reads the baked install stamp (payload kind)
+  // — a constant of the artifact; no manifest, no machine state.
   if (bundledUpdaterActive()) {
     // checkForUpdates rejects on any network/feed failure. Map that to the
     // structured shape the git paths return, so the renderer never sees a
@@ -2731,11 +2743,16 @@ async function checkUpdates() {
     }
   }
 
-  // Source install on the stable channel (an ejected install, or a manual
-  // channel switch): compare against the newest release tag, not against
-  // the tip of main. A commits-behind-main count is meaningless vocabulary
-  // on this channel and reads as an alarming +N.
-  if (updateChannelFromConfig(readTextOrNull(path.join(HERMES_HOME, 'config.yaml'))) === 'stable') {
+  // Source install on the stable channel (a per-install record written by
+  // `hermes update --set-channel stable`): compare against the newest
+  // release tag, not against the tip of main. A commits-behind-main count
+  // is meaningless vocabulary on this channel and reads as an alarming +N.
+  if (
+    updateChannelFromConfig(
+      readTextOrNull(path.join(HERMES_HOME, 'config.yaml')),
+      installIdForRoot(resolveUpdateRoot(), canonicalizeInstallPath)
+    ) === 'stable'
+  ) {
     return checkStableChannelUpdates()
   }
 
@@ -12802,6 +12819,11 @@ ipcMain.handle('hermes:version', () => ({
   nodeVersion: process.versions.node,
   platform: process.platform,
   hermesRoot: resolveUpdateRoot(),
+  // The install id: sha16 of the canonical install-root path — the key of
+  // this install's per-install channel record (update.installs.<sha16> in
+  // config.yaml) and its installs/<sha16>/ state folder. About shows it as
+  // `sha16 (path)`, the same shape `hermes update --install-id` prints.
+  installId: installIdForRoot(resolveUpdateRoot(), canonicalizeInstallPath),
   // The install axis (About renders it as Artifact / Runtime): what this
   // build carries, and where the backend runs from. Bundled artifacts
   // always run their payload; light artifacts have no runtime at all and

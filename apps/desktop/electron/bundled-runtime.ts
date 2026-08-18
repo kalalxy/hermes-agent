@@ -11,6 +11,7 @@
 // dependencies. Thus vitest covers the whole decision surface. The impure
 // executors live in main.ts and bootstrap-runner.
 
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -129,43 +130,84 @@ export function findEmbeddedPython(
 // ─── update channel ─────────────────────────────────────────────────────────
 
 /**
- * The update channel of a source checkout, read from config.yaml text
- * (`update.channel`). The CLI owns this key; Electron only mirrors it for
- * the version pill. Anything but an explicit `stable` means `main` — the
- * default channel. Embedded artifacts never call this: their updates are
- * release-fed by construction.
+ * The install id of the tree at `root`: sha16 of the canonical PATH,
+ * byte-identical to Python's `boot_bootstrap._install_key` (sha256 of the
+ * resolved root, first 16 hex chars). Path-derived so it survives artifact
+ * replacement at the same location; the same key names `installs/<sha16>/`.
+ */
+export function installIdForRoot(root: string, canonicalize: (p: string) => string = p => p): string {
+  return createHash('sha256').update(canonicalize(root), 'utf8').digest('hex').slice(0, 16)
+}
+
+/**
+ * The update channel of the install with id `installId`, read from
+ * config.yaml text (`update.installs.<sha16>.channel` — the per-install
+ * record `hermes update --set-channel` writes; there is no home-global
+ * channel key). The CLI owns this shape; Electron only mirrors it for the
+ * version pill and the stable-channel check path. Anything but an explicit
+ * `stable`/`nightly` record for THIS install means `main` — the default
+ * channel for source checkouts.
  *
  * The parser is deliberately narrow: find the top-level `update:` block,
- * then the first `channel:` inside it. config.yaml is machine-written
- * (`hermes config set update.channel ...`), so this shape is stable.
+ * the `installs:` block inside it, then the `<installId>:` block, then its
+ * `channel:`. config.yaml is machine-written here, so this shape is stable.
  */
-export function updateChannelFromConfig(configText: string | null | undefined): 'stable' | 'main' {
-  if (!configText) {
+export function updateChannelFromConfig(
+  configText: string | null | undefined,
+  installId: string
+): 'stable' | 'main' | 'nightly' {
+  if (!configText || !installId) {
     return 'main'
   }
 
-  let inUpdateBlock = false
+  // Depth by indentation: update: (0) → installs: (>0) → <sha16>: (deeper) →
+  // channel: (deeper still). Track the indent at which each block opened so
+  // a sibling key at the same depth closes it.
+  let updateIndent: number | null = null
+  let installsIndent: number | null = null
+  let idIndent: number | null = null
 
   for (const raw of configText.split('\n')) {
     const line = raw.replace(/\s+$/, '')
-
-    if (/^update:\s*$/.test(line)) {
-      inUpdateBlock = true
-
+    if (!line || /^\s*#/.test(line)) {
       continue
     }
+    const indent = line.length - line.replace(/^\s+/, '').length
+    const key = line.replace(/^\s+/, '')
 
-    if (inUpdateBlock) {
-      // The block ends at the next top-level key (no leading whitespace).
-      if (/^\S/.test(line)) {
-        break
+    if (updateIndent === null) {
+      if (/^update:\s*$/.test(line)) {
+        updateIndent = indent
       }
-
-      const match = line.match(/^\s+channel:\s*["']?(stable|main)["']?\s*(#.*)?$/)
-
-      if (match) {
-        return match[1] as 'stable' | 'main'
+      continue
+    }
+    if (indent <= updateIndent) {
+      break // the update block ended
+    }
+    if (installsIndent === null) {
+      if (/^installs:\s*$/.test(key)) {
+        installsIndent = indent
       }
+      continue
+    }
+    if (indent <= installsIndent) {
+      installsIndent = null
+      idIndent = null
+      continue
+    }
+    if (idIndent === null) {
+      if (new RegExp(`^${installId}:\\s*$`).test(key)) {
+        idIndent = indent
+      }
+      continue
+    }
+    if (indent <= idIndent) {
+      idIndent = null
+      continue
+    }
+    const match = key.match(/^channel:\s*["']?(stable|main|nightly)["']?\s*(#.*)?$/)
+    if (match) {
+      return match[1] as 'stable' | 'main' | 'nightly'
     }
   }
 

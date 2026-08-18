@@ -236,18 +236,24 @@ def _stable_channel_active(args) -> bool:
     """Return True when this update must track tagged releases, not a branch.
 
     ``args`` is the update argparse namespace, or None when the caller has no
-    branch flag to honor. An explicit ``--branch`` always wins. With this flag
-    the user tells us the exact update target. If a tag silently overrides the
-    flag, the class of bug that --branch prevents comes back. In all other
-    cases the effective channel comes from the install manifest and
-    ``update.channel`` in config.yaml
-    (see hermes_cli.install_manifest.resolve_update_channel).
+    flags to honor. An explicit ``--branch`` always wins (the user names the
+    exact update target; a tag silently overriding it would resurrect the bug
+    class --branch prevents). An explicit ``--channel`` is the transient
+    per-invocation override (``--set-channel`` is the persistent one). In all
+    other cases the effective channel comes from the per-install record
+    (see hermes_cli.update_channel.resolve_update_channel).
     """
     if getattr(args, "branch", None):
         return False
+    transient = getattr(args, "channel", None)
+    if transient:
+        from hermes_cli.update_channel import CHANNEL_STABLE
+
+        # nightly on a source tree normalizes to main (not stable).
+        return transient == CHANNEL_STABLE
     try:
         from hermes_cli.config import load_config
-        from hermes_cli.install_manifest import CHANNEL_STABLE, resolve_update_channel
+        from hermes_cli.update_channel import CHANNEL_STABLE, resolve_update_channel
 
         config = None
         try:
@@ -998,7 +1004,7 @@ def _update_via_zip(args):
         tag = _github_latest_release_tag()
         if tag is None:
             print("✗ Hermes cannot resolve the latest release from the GitHub API.")
-            print("  Switch channels with: hermes config set update.channel main")
+            print("  Switch channels with: hermes update --set-channel main")
             _m().sys.exit(1)
         print(f"→ Update channel: stable. Hermes downloads release {tag}.")
         zip_ref = f"refs/tags/{tag}"
@@ -2519,7 +2525,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
             tag, tag_sha = _resolve_latest_release_tag(git_cmd, _m().PROJECT_ROOT)
             if tag is None:
                 print("✗ No release tags found on origin. A check of the stable channel is not possible.")
-                print("  Switch channels with: hermes config set update.channel main")
+                print("  Switch channels with: hermes update --set-channel main")
                 sys.exit(1)
             head_sha = _capture_head_sha(git_cmd, _m().PROJECT_ROOT)
             # Newer releases possibly do not exist locally yet. "At the tag"
@@ -4176,217 +4182,6 @@ def _normalize_managed_eol(git_cmd, repo_root):
         pass
 
 
-def _eject_resident_bundle(bundle_repo_root: Path, pinned_tag: str) -> int:
-    """Eject a resident bundle: hand the install to Hermes Setup.
-
-    The resident bundle is sealed (codesigned resources); no git graft is
-    possible or wanted, and hand-rolling clone+venv here would duplicate
-    the installer badly (no PATH setup, no config templates, no system
-    checks). Instead this downloads the official Hermes Setup app from the
-    website and launches it pinned to the EXACT commit this bundle was
-    built from (.hermes_build_info.json), so the ejected source checkout
-    matches the code the user is running. The installer then performs a
-    normal source install at ~/.hermes/hermes-agent; the desktop prefers
-    that checkout on its next launch. Network is required — the same
-    contract as every other eject.
-
-    Returns a process exit code.
-    """
-    if sys.platform not in ("darwin", "win32"):
-        print("\u2717 Hermes Setup is only published for macOS and Windows.")
-        print("  Install from source instead:")
-        print("  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash")
-        print("  The desktop app will prefer that checkout on its next launch.")
-        return 1
-
-    target = get_hermes_home() / "hermes-agent"
-    existing = _read_json_or_none(target / ".hermes-install.json")
-    if (target / ".git").exists() and (existing is None or existing.get("installMode") == "source"):
-        print(f"\u2713 A source checkout already exists at {target}.")
-        print("  The desktop app will use it on its next launch.")
-        print("  Update it with: hermes update")
-        return 0
-
-    # The exact commit of this bundle. The pinned tag is the fallback label
-    # for the message; the pin itself must be a commit sha because tags can
-    # be re-pointed but the sha names what this bundle actually runs.
-    build_info = _read_json_or_none(bundle_repo_root / ".hermes_build_info.json") or {}
-    commit = str(build_info.get("commit") or "")
-    if not re.fullmatch(r"[0-9a-f]{40}", commit):
-        print("\u2717 An eject is not possible. The bundle's build info has no valid commit.")
-        print("  Reinstall from source instead:")
-        print("  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash")
-        return 1
-
-    setup_name = "Hermes-Setup.dmg" if sys.platform == "darwin" else "Hermes-Setup.exe"
-    setup_url = f"https://hermes-assets.nousresearch.com/{setup_name}"
-
-    print("\u2695 Hermes ejects this install from the sealed app bundle...")
-    print(f"\u2192 Hermes downloads Hermes Setup from {setup_url} ...")
-
-    import tempfile
-
-    scratch = Path(tempfile.mkdtemp(prefix="hermes-eject-"))
-    setup_path = scratch / setup_name
-    if not _download_hermes_setup(setup_url, setup_path):
-        shutil.rmtree(scratch, ignore_errors=True)
-        print("\u2717 The download failed. Hermes aborted the eject. The install is unchanged.")
-        return 1
-
-    print(f"\u2192 Hermes starts the installer, pinned to {pinned_tag} ({commit[:12]})...")
-    ok = _launch_hermes_setup(setup_path, scratch, commit)
-    if not ok:
-        shutil.rmtree(scratch, ignore_errors=True)
-        print("\u2717 Hermes could not start the installer. The install is unchanged.")
-        print(f"  The downloaded file is gone; get it manually: {setup_url}")
-        return 1
-
-    print("\u2713 Hermes Setup is running. Follow its window to finish the eject.")
-    print(f"  \u2022 It installs a source-managed checkout at {target}")
-    print("  \u2022 The desktop app will use that checkout on its next launch.")
-    print("  \u2022 After the install, update with: hermes update")
-    return 0
-
-
-def _read_json_or_none(path: Path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-
-def _download_hermes_setup(url: str, dest: Path) -> bool:
-    """Download the installer to ``dest``. Returns False on any failure."""
-    import urllib.request
-
-    # The asset CDN rejects urllib's default Python-urllib/3.x agent
-    # with 403; identify as Hermes instead.
-    request = urllib.request.Request(url, headers={"User-Agent": "hermes-agent-eject"})
-    try:
-        with urllib.request.urlopen(request, timeout=120) as resp, open(dest, "wb") as out:
-            shutil.copyfileobj(resp, out)
-        return True
-    except OSError as exc:
-        print(f"  {exc}")
-        return False
-
-
-def _launch_hermes_setup(setup_path: Path, scratch: Path, commit: str) -> bool:
-    """Start the downloaded Hermes Setup detached, pinned to ``commit``.
-
-    macOS: mount the dmg, copy the .app out to the scratch dir (so the
-    mount can go away), detach, and open the copy. ``open`` passes args
-    after ``--args`` to the app process. Windows: run the exe directly.
-    Returns False when any step fails; never raises.
-    """
-    try:
-        if sys.platform == "darwin":
-            mount = scratch / "mnt"
-            mount.mkdir()
-            attach = subprocess.run(
-                ["hdiutil", "attach", str(setup_path), "-mountpoint", str(mount),
-                 "-nobrowse", "-quiet"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-            )
-            if attach.returncode != 0:
-                print(f"  hdiutil attach failed: {(attach.stderr or '').strip()}")
-                return False
-            try:
-                apps = sorted(mount.glob("*.app"))
-                if not apps:
-                    print("  The mounted image has no .app.")
-                    return False
-                app_copy = scratch / apps[0].name
-                shutil.copytree(apps[0], app_copy, symlinks=True)
-            finally:
-                subprocess.run(
-                    ["hdiutil", "detach", str(mount), "-quiet"],
-                    capture_output=True, check=False,
-                )
-            launch = subprocess.run(
-                ["open", "-n", str(app_copy), "--args", "--pin-commit", commit],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-            )
-            if launch.returncode != 0:
-                print(f"  open failed: {(launch.stderr or '').strip()}")
-            return launch.returncode == 0
-        # Windows: the exe is the app. Detach so the eject command returns.
-        subprocess.Popen(
-            [str(setup_path), "--pin-commit", commit],
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-            close_fds=True,
-        )
-        return True
-    except OSError as exc:
-        print(f"  {exc}")
-        return False
-
-
-def cmd_update_eject(args) -> int:
-    """Implement ``hermes update --eject``.
-
-    A desktop-bundled install runs the agent out of the sealed app bundle
-    (resident mode). The eject creates a normal source install beside it:
-    it downloads Hermes Setup from the website and launches it pinned to
-    the exact commit this bundle was built from. The desktop app prefers
-    the resulting source checkout on its next launch. On an install that
-    is already source-managed, the command only switches the channel.
-
-    Returns a process exit code.
-    """
-    from hermes_cli.install_manifest import (
-        CHANNEL_MAIN,
-        CHANNEL_STABLE,
-        MODE_SOURCE,
-        STYLE_EJECTED,
-        install_manifest_path,
-        read_install_manifest,
-        write_install_manifest,
-    )
-
-    project_root = _m().PROJECT_ROOT
-    manifest = read_install_manifest(project_root)
-    channel = getattr(args, "channel", None) or CHANNEL_MAIN
-    if channel not in (CHANNEL_MAIN, CHANNEL_STABLE):
-        print(f"✗ Unknown channel '{channel}'. Use 'stable' or 'main'.")
-        return 1
-
-    if manifest.get("installMode") != "bundled":
-        # The install is already source-managed. Obey an explicit --channel
-        # request, so that `hermes update --eject --channel stable` is a
-        # one-shot way to switch. But do not touch the git history.
-        if getattr(args, "channel", None):
-            manifest["installMode"] = MODE_SOURCE
-            manifest["channel"] = channel
-            # We do not set the ejected mark here. This shorthand runs on
-            # checkouts that the desktop never managed, or on checkouts that
-            # the user already ejected. In the second case, the code below
-            # keeps the existing style. A plain channel switch is not an
-            # adoption opt-out.
-            write_install_manifest(manifest, project_root)
-            print(f"✓ The install is already source-managed. The channel is now '{channel}'.")
-        else:
-            print("✓ Nothing to eject. This install is already source-managed.")
-            print("  (Only desktop-bundled installs need an eject.)")
-        return 0
-
-    pinned_tag = manifest.get("pinnedTag") or ""
-    if not re.fullmatch(r"v(0|[1-9]\d{0,2})\.\d+\.\d+", pinned_tag):
-        print("✗ An eject is not possible. The install manifest has no valid pinned tag.")
-        print("  Reinstall from source instead:")
-        print("  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash")
-        return 1
-
-    # Hermes Setup writes the ejected checkout's own manifest, so an explicit
-    # --channel cannot apply here. Say so instead of dropping it silently.
-    if getattr(args, "channel", None):
-        print(f"⚠ --channel {channel} does not apply to this eject.")
-        print("  After the install, set it with: hermes update --eject --channel " + channel)
-
-    return _eject_resident_bundle(project_root, pinned_tag)
-
-
 def _cmd_update_impl(args, gateway_mode: bool):
     """Body of ``cmd_update`` — kept separate so the wrapper can always
     restore stdio even on ``sys.exit``."""
@@ -4652,7 +4447,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
             )
             if stable_tag is None:
                 print("✗ No release tags found on origin. An update on the stable channel is not possible.")
-                print("  Switch channels with: hermes config set update.channel main")
+                print("  Switch channels with: hermes update --set-channel main")
                 _m()._resume_windows_gateways_after_update(_windows_gateway_resume)
                 sys.exit(1)
             print(f"→ Latest release: {stable_tag}")

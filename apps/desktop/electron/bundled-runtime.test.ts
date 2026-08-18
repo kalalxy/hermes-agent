@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 
 import { test } from 'vitest'
 
 import {
   embeddedRuntimeItems,
   findEmbeddedPython,
+  installIdForRoot,
   latestReleaseFromLsRemote,
   PAYLOAD_SCHEMA_VERSION,
   resolvePayload,
@@ -148,25 +150,47 @@ test('findEmbeddedPython picks the patch-versioned dir and needs a real binary',
 
 // ─── updateChannelFromConfig ───────────────────────────────────────
 
-test('channel comes from update.channel in config.yaml; absent means main', () => {
-  assert.equal(updateChannelFromConfig('update:\n  channel: stable\n'), 'stable')
-  assert.equal(updateChannelFromConfig('update:\n  channel: "stable"\n'), 'stable')
-  assert.equal(updateChannelFromConfig('update:\n  channel: main\n'), 'main')
-  assert.equal(updateChannelFromConfig('model:\n  provider: nous\n'), 'main')
-  assert.equal(updateChannelFromConfig(null), 'main')
-  assert.equal(updateChannelFromConfig(''), 'main')
+const ID = 'a4f3b2c1d0e9f8a7'
+const record = (channel: string, id: string = ID) => `update:\n  installs:\n    ${id}:\n      path: /home/u/.hermes/hermes-agent\n      channel: ${channel}\n`
+
+test('channel comes from the per-install record; absent means main', () => {
+  assert.equal(updateChannelFromConfig(record('stable'), ID), 'stable')
+  assert.equal(updateChannelFromConfig(record('"stable"'), ID), 'stable')
+  assert.equal(updateChannelFromConfig(record('nightly'), ID), 'nightly')
+  assert.equal(updateChannelFromConfig(record('main'), ID), 'main')
+  assert.equal(updateChannelFromConfig('model:\n  provider: nous\n', ID), 'main')
+  assert.equal(updateChannelFromConfig(null, ID), 'main')
+  assert.equal(updateChannelFromConfig('', ID), 'main')
 })
 
-test('channel parsing stays inside the update block', () => {
-  // A channel key in ANOTHER block must not leak into the answer.
-  const text = 'gateway:\n  channel: stable\nupdate:\n  interval: 1\nmodel:\n  channel: stable\n'
+test("another install's record never answers for this install", () => {
+  // One config.yaml serves many installs — the whole reason the key is
+  // per-install. A stable record under a DIFFERENT sha16 must not leak.
+  assert.equal(updateChannelFromConfig(record('stable', 'ffffffffffffffff'), ID), 'main')
 
-  assert.equal(updateChannelFromConfig(text), 'main')
+  // Two records: only ours answers.
+  const both = record('stable', 'ffffffffffffffff') + '    ' + ID + ':\n      channel: nightly\n'
+  assert.equal(updateChannelFromConfig(both, ID), 'nightly')
+})
+
+test('channel parsing stays inside update.installs', () => {
+  // A channel key in ANOTHER block must not leak into the answer.
+  const text = `gateway:\n  channel: stable\nupdate:\n  interval: 1\nmodel:\n  channel: stable\n`
+  assert.equal(updateChannelFromConfig(text, ID), 'main')
 
   // The update block ends at the next top-level key.
-  const ended = 'update:\n  interval: 1\nother:\n  channel: stable\n'
+  const ended = `update:\n  interval: 1\nother:\n  installs:\n    ${ID}:\n      channel: stable\n`
+  assert.equal(updateChannelFromConfig(ended, ID), 'main')
+})
 
-  assert.equal(updateChannelFromConfig(ended), 'main')
+test('installIdForRoot matches boot_bootstrap._install_key (sha16 of the canonical path)', () => {
+  // sha256('/home/u/.hermes/hermes-agent')[:16] — recomputed independently.
+  assert.equal(installIdForRoot('/home/u/.hermes/hermes-agent'), createHash('sha256').update('/home/u/.hermes/hermes-agent', 'utf8').digest('hex').slice(0, 16))
+  // The canonicalizer output is what gets hashed (symlinked homes).
+  assert.equal(
+    installIdForRoot('/link/hermes-agent', () => '/real/hermes-agent'),
+    installIdForRoot('/real/hermes-agent')
+  )
 })
 
 // ── latestReleaseFromLsRemote ───────────────────────────────────────

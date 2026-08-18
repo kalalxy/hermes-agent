@@ -29,19 +29,19 @@ from hermes_cli.main import cmd_update
 
 
 def _args(**overrides):
-    base = dict(eject=False, check=False, gateway=False, branch=None, channel=None)
+    base = dict(check=False, gateway=False, branch=None, channel=None,
+                set_channel=None, install_id=False)
     base.update(overrides)
     return SimpleNamespace(**base)
 
 
 class TestSealedDesktopUpdateRefusal:
-    def test_sealed_payload_without_manifest_refuses(self, capsys):
-        """The live-bug shape: stamp says desktop-app, no manifest on disk
-        (is_bundled_install False). Must refuse, print the steward message,
-        and never reach the update body."""
+    def test_sealed_payload_refuses(self, capsys):
+        """The live-bug shape: stamp says desktop-app (no manifest exists —
+        the manifest is dead). Must refuse, print the steward message, and
+        never reach the update body."""
         with (
             patch("hermes_cli.config.detect_install_method", return_value="desktop-app"),
-            patch("hermes_cli.install_manifest.is_bundled_install", return_value=False),
             patch("hermes_cli.main._cmd_update_impl") as impl,
         ):
             with pytest.raises(SystemExit) as exc:
@@ -53,31 +53,36 @@ class TestSealedDesktopUpdateRefusal:
         assert "desktop app" in out
         assert "git pull" not in out
 
-    def test_materialized_bundled_checkout_still_refuses(self, capsys):
-        """The pre-existing path keeps working: a manifest with
-        installMode=bundled refuses even when the method probe says git."""
+    def test_materialized_bundled_checkout_is_just_a_checkout_now(self):
+        """The manifest is dead: nothing can mark a checkout 'bundled'
+        anymore. A .git tree classifies purely by its stamp — this case
+        (formerly 'manifest says bundled → refuse') now proceeds like any
+        managed checkout. The refusal surface is the stamp alone."""
         with (
             patch("hermes_cli.config.detect_install_method", return_value="git"),
-            patch("hermes_cli.install_manifest.is_bundled_install", return_value=True),
             patch("hermes_cli.main._cmd_update_impl") as impl,
+            patch("hermes_cli.main._install_hangup_protection", return_value=None),
+            patch("hermes_cli.main._finalize_update_output"),
         ):
-            with pytest.raises(SystemExit) as exc:
+            try:
                 cmd_update(_args())
-        assert exc.value.code == 1
-        impl.assert_not_called()
+            except SystemExit:
+                pass
+        # The update body was reachable — no manifest gate stands in the way.
+        assert impl.called
 
-    def test_eject_still_reachable_on_sealed_payload(self):
-        """--eject must keep working on a desktop-app tree: it is the one
-        update operation a bundled install supports, and it runs before
-        the refusal."""
+    def test_refusal_names_the_docs_page_direction(self, capsys):
+        """The sealed refusal points at the desktop app (switching to a
+        source install is a docs journey, not a CLI flag anymore)."""
         with (
             patch("hermes_cli.config.detect_install_method", return_value="desktop-app"),
-            patch("hermes_cli.update_cmd.cmd_update_eject", return_value=0) as eject,
+            patch("hermes_cli.main._cmd_update_impl") as impl,
         ):
-            with pytest.raises(SystemExit) as exc:
-                cmd_update(_args(eject=True))
-        assert exc.value.code == 0
-        eject.assert_called_once()
+            with pytest.raises(SystemExit):
+                cmd_update(_args())
+        impl.assert_not_called()
+        out = capsys.readouterr().out
+        assert "desktop app" in out
 
     def test_check_path_also_refuses_sealed_payload(self, capsys):
         """--check on the sealed payload prints the steward refusal, not a

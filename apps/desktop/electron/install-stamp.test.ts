@@ -18,6 +18,7 @@ function stamp(overrides: Partial<InstallStamp>): InstallStamp {
     dirty: false,
     source: 'ci',
     distribution: 'desktop-app',
+    updateMechanism: 'electron-updater',
     baseVersion: '0.21.0',
     displayVersion: '0.21.0',
     distance: 0,

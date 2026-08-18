@@ -11,14 +11,11 @@ import json
 import pytest
 
 from installation.tree import (
-    CHANNEL_MAIN,
-    CHANNEL_STABLE,
     STEWARD_UPDATE_MESSAGES,
     UPDATE_MECHANISMS,
     GitCheckout,
     Sealed,
     install_method,
-    resolve_update_channel,
     runtime_tree,
     steward_update_message,
 )
@@ -145,17 +142,5 @@ class TestStewardMessages:
 
 
 class TestResolveUpdateChannel:
-    def test_stable_from_config(self):
-        assert resolve_update_channel({"update": {"channel": "stable"}}) == CHANNEL_STABLE
-
-    def test_main_is_the_default(self):
-        assert resolve_update_channel(None) == CHANNEL_MAIN
-        assert resolve_update_channel({}) == CHANNEL_MAIN
-        assert resolve_update_channel({"update": {}}) == CHANNEL_MAIN
-
-    def test_auto_and_unknown_mean_main(self):
-        assert resolve_update_channel({"update": {"channel": "auto"}}) == CHANNEL_MAIN
-        assert resolve_update_channel({"update": {"channel": "nightly"}}) == CHANNEL_MAIN
-
-    def test_case_and_whitespace_are_forgiven(self):
-        assert resolve_update_channel({"update": {"channel": " Stable "}}) == CHANNEL_STABLE
+    """The channel resolver moved to hermes_cli.update_channel (per-install
+    records) — these cases live in tests/hermes_cli/test_update_channel.py."""

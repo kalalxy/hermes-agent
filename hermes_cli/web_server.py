@@ -1050,10 +1050,10 @@ _CATEGORY_MERGE: Dict[str, str] = {
     "prompt_caching": "agent",
     "goals": "agent",
     "updates": "general",
-    # `update.channel` is the only schema-surfaced field under `update` (the
-    # bundled-install release-channel selector) — fold it into general next
-    # to the sibling `updates` section rather than spawning a one-field
-    # orphan category.
+    # `update.installs` is machine-written per-install channel records
+    # (`hermes update --set-channel`), not a hand-edited setting — but the
+    # walker still surfaces the section; fold it into general next to the
+    # sibling `updates` section rather than spawning an orphan category.
     "update": "general",
     # `onboarding.profile_build` is the only schema-surfaced onboarding field
     # (`onboarding.seen` is an internal latch dict, not a user setting), so fold

@@ -2556,15 +2556,19 @@ DEFAULT_CONFIG = {
 
     # Settings for the update pipeline.
     "update": {
-        # This setting selects the releases that `hermes update` tracks on
-        # source (git) installs:
-        #   auto   — use the install manifest (.hermes-install.json).
-        #            This is the same as "main" for each pre-existing install.
-        #   main   — git pull origin main (the current behavior).
-        #   stable — check out the latest tagged release, not main.
-        # Bundled desktop installs ignore this setting and always track
-        # stable. Their updates come from the updater of the desktop app.
-        "channel": "auto",
+        # Per-install channel records, written by `hermes update
+        # --set-channel <main|stable|nightly>` from inside an install:
+        #   installs:
+        #     <sha16>:                 # install id (`hermes update --install-id`)
+        #       path: /path/to/install # data, for humans + doctor GC
+        #       channel: nightly
+        # There is NO home-global channel key: one config.yaml serves many
+        # installs (host + docker + desktop share ~/.hermes), and a global
+        # flip would retarget all of them at once. Unconfigured installs
+        # default by mechanism: source checkouts track main, desktop
+        # bundles track stable. Installs updated by an external steward
+        # (nix, docker, app stores) have no channel at all.
+        "installs": {},
     },
 
     # Remotely-hosted model catalog manifest.  When enabled, the CLI fetches
