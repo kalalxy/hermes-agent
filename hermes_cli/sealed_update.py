@@ -207,7 +207,9 @@ def spawn_detached_apply(script_text: str) -> None:
     from hermes_cli._subprocess_compat import windows_detach_popen_kwargs
 
     fd, path = tempfile.mkstemp(suffix=".ps1", prefix="hermes-sealed-update-")
-    with os.fdopen(fd, "w", encoding="utf-8-sig") as f:
+    # Windows PowerShell 5.1 parses a BOM-less .ps1 as ANSI (cp1252); the
+    # BOM is what makes it read the script as UTF-8.
+    with os.fdopen(fd, "w", encoding="utf-8-sig") as f:  # windows-footgun: ok
         f.write(script_text)
     subprocess.Popen(
         [
