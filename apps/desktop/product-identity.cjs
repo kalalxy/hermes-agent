@@ -38,11 +38,11 @@ const name = variants[variant ?? '']
 const light = process.env.HERMES_DESKTOP_VARIANT === 'light'
 
 // The electron-updater feed channel this build PUBLISHES to. A nightly
-// tag (vX.Y.0-nightly.YYYYMMDD) writes nightly.yml / light-nightly.yml;
+// tag (vX.Y.0-nightly.YYYYMMDDHHMMSS) writes nightly.yml / light-nightly.yml;
 // stable tags write latest.yml / light.yml. Keyed on the payload tag so
 // the one release workflow serves both channels — a nightly build can
 // never overwrite the stable feed file, and vice versa.
-const nightly = /-nightly\.20\d{6}$/.test(process.env.HERMES_PAYLOAD_TAG || '')
+const nightly = /-nightly\.20\d{6}(?:\d{6})?$/.test(process.env.HERMES_PAYLOAD_TAG || '')
 
 /** @typedef {import("./product-identity.d.cts")} ProductIdentity */
 
