@@ -179,8 +179,8 @@ if (!tag) {
     fail("no --tag=vX.Y.Z given and HEAD is not at an exact release tag")
   }
 }
-if (!/^v(?:0|[1-9]\d{0,2})\.\d+\.\d+$/.test(tag)) {
-  fail(`'${tag}' is not a final release tag (vX.Y.Z)`)
+if (!/^v(?:0|[1-9]\d{0,2})\.\d+\.\d+(?:-nightly\.20\d{6})?$/.test(tag)) {
+  fail(`'${tag}' is not a release tag (vX.Y.Z or vX.Y.0-nightly.YYYYMMDD)`)
 }
 
 // The canonical Hermes version is owned by pyproject.toml (the same rule
@@ -189,18 +189,41 @@ if (!/^v(?:0|[1-9]\d{0,2})\.\d+\.\d+$/.test(tag)) {
 // carry the real release version instead of the UI manifest's stale one.
 // The tag must agree with it: a v0.21.0 payload inside an app that
 // announces 0.20.0 would make electron-updater blind to the mismatch.
+//
+// Nightly tags are the one exception: no version-bump commit exists (the
+// tag points at plain HEAD), so the TAG is the version truth — the app
+// announces v0.28.0-nightly.YYYYMMDD, which is what makes the nightly
+// channel's semver ordering work (outversions stable 0.27.x, loses to
+// stable 0.28.0).
 const pyprojectVersion = fs
   .readFileSync(path.join(REPO_ROOT, "pyproject.toml"), "utf8")
   .match(/^version\s*=\s*"([^"]+)"/m)?.[1]
 if (!pyprojectVersion) {
   fail("could not read version from pyproject.toml")
 }
-if (tag !== `v${pyprojectVersion}`) {
+const isNightly = tag.includes("-nightly.")
+if (!isNightly && tag !== `v${pyprojectVersion}`) {
   fail(`tag ${tag} does not match pyproject.toml version ${pyprojectVersion}`)
 }
+const artifactVersion = isNightly ? tag.slice(1) : pyprojectVersion
 
-const targets = { linux: "--linux AppImage", darwin: "--mac dmg zip", win32: "--win nsis msix" }[process.platform]
-if (!targets) {
+// On win32 the two artifacts carry DIFFERENT update stewards — nsis
+// updates through electron-updater, msix through the Store — and the
+// stamp is a build input (write-shell-stamp.mjs + stage-agent-payloads
+// both read HERMES_PAYLOAD_UPDATE_MECHANISM). So the win leg packs
+// TWICE, each pass a full top-down build with its own stamp; nothing
+// ever edits a stamp after the canonical writer emits it. The second
+// pass reuses the payload staging cache (.stage-cache-key ignores the
+// stamp), so it costs minutes, not an hour.
+const passes = {
+  linux: [{ targets: "--linux AppImage", mechanism: "electron-updater" }],
+  darwin: [{ targets: "--mac dmg zip", mechanism: "electron-updater" }],
+  win32: [
+    { targets: "--win nsis", mechanism: "electron-updater" },
+    { targets: "--win msix", mechanism: "external" },
+  ],
+}[process.platform]
+if (!passes) {
   fail(`unsupported platform: ${process.platform}`)
 }
 
@@ -275,18 +298,22 @@ const env = {
 }
 
 const desktop = path.join(REPO_ROOT, "apps", "desktop")
-run("npm", ["run", "build"], { cwd: desktop, env })
 
-run(
-  "npm",
-  [
-    "run", "builder", "--",
-    ...targets.split(" "),
-    `-c.extraMetadata.version=${pyprojectVersion}`,
-    ...extraBuilderArgs,
-  ],
-  { cwd: desktop, env }
-)
+for (const pass of passes) {
+  const passEnv = { ...env, HERMES_PAYLOAD_UPDATE_MECHANISM: pass.mechanism }
+  console.log(`[build-bundled] pass: ${pass.targets} (updateMechanism=${pass.mechanism})`)
+  run("npm", ["run", "build"], { cwd: desktop, env: passEnv })
+  run(
+    "npm",
+    [
+      "run", "builder", "--",
+      ...pass.targets.split(" "),
+      `-c.extraMetadata.version=${artifactVersion}`,
+      ...extraBuilderArgs,
+    ],
+    { cwd: desktop, env: passEnv }
+  )
+}
 console.log(`[build-bundled] artifacts: ${path.join(desktop, "release")}`)
 
 if (work) {
