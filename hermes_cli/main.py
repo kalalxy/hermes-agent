@@ -9249,6 +9249,7 @@ def cmd_update(args):
     if getattr(args, "set_channel", None):
         from hermes_cli.update_channel import (
             CHANNEL_NIGHTLY,
+            CHANNEL_STABLE,
             nightly_normalized_note,
             set_install_channel,
         )
@@ -9265,6 +9266,23 @@ def cmd_update(args):
             else:
                 print("⚠ Nightly builds move fast: expect forward-incompatible")
                 print("  state — data written by newer code may not load in stable.")
+        elif args.set_channel == CHANNEL_STABLE:
+            # Honest wait: a nightly build outversions today's stable, and
+            # the updater never downgrades. Say when the switch takes
+            # effect, and where the impatient path is.
+            from installation.tree import read_build_info
+
+            try:
+                version = read_build_info(Path(PROJECT_ROOT)).get("displayVersion") or ""
+            except RuntimeError:
+                version = ""
+            if "-nightly." in version:
+                base = version.split("-nightly.")[0]
+                print(f"→ You are on {version}. Stable updates resume once a")
+                print(f"  stable release reaches v{base} — until then this install")
+                print("  stays where it is. To switch now, reinstall stable:")
+                print("  https://hermes-agent.nousresearch.com/")
+                print("  (Nightly state may not load in older stable builds.)")
         sys.exit(0)
 
     # The sealed desktop payload runs the agent out of the app's signed

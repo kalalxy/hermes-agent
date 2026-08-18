@@ -181,6 +181,57 @@ class TestSetChannel:
             set_install_channel("beta", root)
 
 
+class TestSetChannelCLI:
+    """cmd_update --set-channel: the switch texts (design record)."""
+
+    def _args(self, **kw):
+        from types import SimpleNamespace
+
+        base = dict(check=False, gateway=False, branch=None, channel=None,
+                    set_channel=None, install_id=False)
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def test_stable_switch_from_nightly_is_an_honest_wait(self, capsys):
+        from unittest.mock import patch
+
+        from hermes_cli.main import cmd_update
+
+        with (
+            patch("hermes_cli.config.detect_install_method", return_value="desktop-app"),
+            patch("hermes_cli.update_channel.set_install_channel", return_value="a" * 16),
+            patch(
+                "installation.tree.read_build_info",
+                return_value={
+                    "updateMechanism": "electron-updater",
+                    "displayVersion": "0.28.0-nightly.20260818",
+                },
+            ),
+        ):
+            with pytest.raises(SystemExit) as exc:
+                cmd_update(self._args(set_channel="stable"))
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "0.28.0-nightly.20260818" in out       # names where you are
+        assert "v0.28.0" in out                       # names the wait target
+        assert "hermes-agent.nousresearch.com" in out  # the impatient path
+
+    def test_nightly_optin_warns_about_forward_incompatible_state(self, capsys):
+        from unittest.mock import patch
+
+        from hermes_cli.main import cmd_update
+
+        with (
+            patch("hermes_cli.config.detect_install_method", return_value="desktop-app"),
+            patch("hermes_cli.update_channel.set_install_channel", return_value="a" * 16),
+        ):
+            with pytest.raises(SystemExit) as exc:
+                cmd_update(self._args(set_channel="nightly"))
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "forward-incompatible" in out
+
+
 class TestDoctorStaleness:
     def test_missing_path_flagged(self, tmp_path):
         gone = tmp_path / "gone"

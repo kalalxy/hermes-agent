@@ -48,11 +48,12 @@ export function shouldUseAppUpdater(facts: UpdaterGateFacts): boolean {
 export function describeFeedCheck(
   current: string,
   info: { version?: string } | null | undefined,
-  isUpdateAvailable?: boolean
+  isUpdateAvailable?: boolean,
+  channel: 'stable' | 'nightly' = 'stable'
 ): {
   supported: true
   mechanism: 'app-updater'
-  channel: 'stable'
+  channel: 'stable' | 'nightly'
   currentVersion: string
   latestVersion: string | null
   latestTag: string | null
@@ -64,10 +65,11 @@ export function describeFeedCheck(
   return {
     supported: true,
     mechanism: 'app-updater',
-    // Bundled installs are locked to the stable channel; saying so here
-    // lets every renderer surface pick release vocabulary without a
-    // separate probe of the install manifest.
-    channel: 'stable',
+    // The channel this bundled install tracks: stable (latest.yml) unless
+    // its per-install record opts into nightly (nightly.yml). Saying so
+    // here lets every renderer surface pick release vocabulary without a
+    // separate probe.
+    channel,
     currentVersion: current,
     latestVersion: latest,
     latestTag: latest ? `v${latest}` : null,
@@ -108,11 +110,22 @@ export function getAutoUpdater(): AppUpdater {
 }
 
 /** Check the GitHub Releases feed. Returns the renderer-shaped result. */
-export async function checkAppUpdate(currentVersion: string): Promise<ReturnType<typeof describeFeedCheck>> {
+export async function checkAppUpdate(
+  currentVersion: string,
+  channel: 'stable' | 'nightly' = 'stable'
+): Promise<ReturnType<typeof describeFeedCheck>> {
   const updater = getAutoUpdater()
+
+  // electron-updater's channel property selects which <channel>.yml the
+  // check reads. Set it on every check: the user can flip the per-install
+  // record between two checks of one app session. allowPrerelease rides
+  // along — nightly artifacts publish as GitHub prereleases.
+  updater.channel = channel === 'nightly' ? 'nightly' : null
+  updater.allowPrerelease = channel === 'nightly'
+
   const result = await updater.checkForUpdates()
 
-  return describeFeedCheck(currentVersion, result?.updateInfo, result?.isUpdateAvailable)
+  return describeFeedCheck(currentVersion, result?.updateInfo, result?.isUpdateAvailable, channel)
 }
 
 /**

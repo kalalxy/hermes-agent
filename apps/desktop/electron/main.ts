@@ -2730,7 +2730,15 @@ async function checkUpdates() {
     // structured shape the git paths return, so the renderer never sees a
     // raw IPC rejection on an offline check.
     try {
-      return await checkAppUpdate(app.getVersion())
+      return await checkAppUpdate(
+        app.getVersion(),
+        updateChannelFromConfig(
+          readTextOrNull(path.join(HERMES_HOME, 'config.yaml')),
+          installIdForRoot(resolveUpdateRoot(), canonicalizeInstallPath)
+        ) === 'nightly'
+          ? 'nightly'
+          : 'stable'
+      )
     } catch (error) {
       return {
         supported: true,
