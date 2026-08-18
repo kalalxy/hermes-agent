@@ -76,6 +76,14 @@ export function VersionDetails({ version }: { version: DesktopVersionInfo }) {
           <dd className="break-all text-right">{runtime}</dd>
         </div>
       )}
+      {version.installId && (
+        <div className="flex justify-between gap-4">
+          <dt className="text-muted-foreground">{u.versionDetailsInstallId}</dt>
+          <dd className="break-all text-right font-mono text-xs">
+            {version.installId} ({version.hermesRoot})
+          </dd>
+        </div>
+      )}
     </dl>
   )
 }

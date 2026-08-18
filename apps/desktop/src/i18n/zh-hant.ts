@@ -1996,6 +1996,7 @@ export const zhHant = defineLocale({
     versionDetailsRuntimeEmbedded: '內嵌執行環境',
     versionDetailsRuntimeExternal: '外部（使用本機執行環境）',
     versionDetailsRuntime: '執行環境',
+    versionDetailsInstallId: '安裝 ID',
     versionDetailsUncommittedChanges: '（有未提交變更）',
     connectionRetry: '請檢查網路連線後重試。',
     latestBody: '您正在執行最新版本。',

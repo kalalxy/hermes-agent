@@ -2277,6 +2277,7 @@ export const en: Translations = {
     versionDetailsRuntimeEmbedded: 'Embedded runtime',
     versionDetailsRuntimeExternal: 'External (uses the machine runtime)',
     versionDetailsRuntime: 'Runtime',
+    versionDetailsInstallId: 'Install ID',
     versionDetailsUncommittedChanges: '(+ uncommitted changes)',
     connectionRetry: 'Check your connection and try again.',
     latestBody: 'You’re running the latest version.',

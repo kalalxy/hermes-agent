@@ -2057,6 +2057,7 @@ export const ja = defineLocale({
     versionDetailsRuntimeEmbedded: '内蔵ランタイム',
     versionDetailsRuntimeExternal: '外部（マシンのランタイムを使用）',
     versionDetailsRuntime: 'ランタイム',
+    versionDetailsInstallId: 'インストール ID',
     versionDetailsUncommittedChanges: '（未コミットの変更あり）',
     connectionRetry: '接続を確認してもう一度試してください。',
     latestBody: '最新バージョンを実行しています。',

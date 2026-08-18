@@ -2466,6 +2466,7 @@ export const zh: Translations = {
     versionDetailsRuntimeEmbedded: '内嵌运行时',
     versionDetailsRuntimeExternal: '外部（使用本机运行时）',
     versionDetailsRuntime: '运行时',
+    versionDetailsInstallId: '安装 ID',
     versionDetailsUncommittedChanges: '（有未提交更改）',
     connectionRetry: '请检查网络连接后重试。',
     latestBody: '你正在运行最新版本。',
