@@ -176,7 +176,7 @@ def save_moa_turn(
                 "output_location": _output_location,
             },
         }
-        with path.open("a", encoding="utf-8-sig") as f:
+        with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
     except Exception as exc:  # pragma: no cover - tracing must never break a turn
         logger.debug("MoA trace write failed (session=%s): %s", session_id, exc)
