@@ -1,15 +1,15 @@
-"""installation.pip_ladder: one ladder, policy by argument.
+"""installation.pip_ladder: one managed-uv install path, no pip tier.
 
-Driven with fake uv/pip binaries so every tier decision is observable
-without network. The stdlib-only contract rides the same run-bare audit
-as the rest of the installation package.
+Driven with fake uv binaries so every decision is observable without
+network. The stdlib-only contract rides the same run-bare audit as the
+rest of the installation package.
 """
 
 from __future__ import annotations
 
+import ast
 import stat
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -43,8 +43,8 @@ class TestStdlibOnly:
         assert result.returncode == 0, result.stderr
 
 
-class TestTierPolicy:
-    def test_uv_success_never_reaches_pip(self, tmp_path, monkeypatch):
+class TestUvOnly:
+    def test_uv_success(self, tmp_path, monkeypatch):
         uv = _fake_bin(tmp_path / "uv", exit_code=0)
         calls: list[list[str]] = []
         real_run = subprocess.run
@@ -61,80 +61,66 @@ class TestTierPolicy:
         assert len(calls) == 1
         assert calls[0][:3] == [str(uv), "pip", "install"]
 
-    def test_resolver_failure_final_stops_at_uv(self, tmp_path, monkeypatch):
-        """Lazy policy: uv said no after SEEING the requirements; pip
-        must not get a second opinion without uv's exclude-newer etc."""
+    def test_uv_failure_is_final(self, tmp_path, monkeypatch):
+        """uv saw the requirements and said no.
+
+        There is no second opinion: pip would resolve the same
+        requirements without uv policy (exclude-newer, the [tool.uv]
+        overrides) and can install a quarantined release.
+        """
         uv = _fake_bin(tmp_path / "uv", exit_code=1, marker="no solution")
-        pip_ran = []
-        monkeypatch.setattr(
-            pip_ladder.sys, "executable", str(_fake_bin(tmp_path / "py"))
-        )
-
-        out = pip_ladder.pip_install(
-            ["somepkg"], uv_bin=str(uv), uv_resolver_failure_is_final=True
-        )
-
-        assert not out.ok and out.tier == "uv"
-        assert "no solution" in out.stderr
-        assert pip_ran == []
-
-    def test_setup_policy_falls_through_to_pip(self, tmp_path, monkeypatch):
-        """Setup-hook policy: any tier that works is a win."""
-        uv = _fake_bin(tmp_path / "uv", exit_code=1, marker="uv unhappy")
-
-        seen = []
+        calls: list[list[str]] = []
         real_run = subprocess.run
 
         def spy(cmd, **kw):
-            seen.append([str(c) for c in cmd])
-            if "-m" in cmd and "pip" in cmd:
-                if "--version" in cmd:
-                    return subprocess.CompletedProcess(cmd, 0, "pip 25.0", "")
-                return subprocess.CompletedProcess(cmd, 0, "installed", "")
+            calls.append([str(c) for c in cmd])
             return real_run(cmd, **kw)
 
         monkeypatch.setattr(pip_ladder.subprocess, "run", spy)
 
-        out = pip_ladder.pip_install(
-            ["somepkg"], uv_bin=str(uv), uv_resolver_failure_is_final=False
+        out = pip_ladder.pip_install(["somepkg"], uv_bin=str(uv))
+
+        assert not out.ok and out.tier == "uv"
+        assert "no solution" in out.stderr
+        assert len(calls) == 1, f"a second install tier ran: {calls}"
+        assert not any("pip" in c and "-m" in c for c in calls)
+
+    def test_no_managed_uv_names_the_provisioner(self, monkeypatch):
+        """An unprovisioned tree is a provisioning fault, not an install
+        that quietly takes a weaker path."""
+        monkeypatch.setattr(pip_ladder, "default_uv", lambda: None)
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            pip_ladder.subprocess,
+            "run",
+            lambda cmd, **kw: calls.append([str(c) for c in cmd]),
         )
 
-        assert out.ok and out.tier == "pip"
-        assert any("--version" in c for c in seen)  # probed before install
+        out = pip_ladder.pip_install(["somepkg"])
 
-    def test_vanished_uv_is_availability_not_verdict(self, tmp_path, monkeypatch):
-        """FileNotFoundError means uv never evaluated anything — pip is a
-        valid fallback even under resolver-final policy."""
-        seen = []
+        assert not out.ok and out.tier == "none"
+        assert "installation.provisioner" in out.stderr
+        assert calls == [], f"an install ran with no managed uv: {calls}"
 
+    def test_vanished_uv_reports_the_missing_binary(self, tmp_path, monkeypatch):
         def spy(cmd, **kw):
-            seen.append([str(c) for c in cmd])
-            if str(cmd[0]).endswith("uv-gone"):
-                raise FileNotFoundError(cmd[0])
-            if "--version" in cmd:
-                return subprocess.CompletedProcess(cmd, 0, "pip 25.0", "")
-            return subprocess.CompletedProcess(cmd, 0, "installed", "")
+            raise FileNotFoundError(cmd[0])
 
         monkeypatch.setattr(pip_ladder.subprocess, "run", spy)
 
         out = pip_ladder.pip_install(
-            ["somepkg"],
-            uv_bin=str(tmp_path / "uv-gone"),
-            uv_resolver_failure_is_final=True,
+            ["somepkg"], uv_bin=str(tmp_path / "uv-gone")
         )
 
-        assert out.ok and out.tier == "pip"
+        assert not out.ok and out.tier == "none"
+        assert "uv-gone" in out.stderr
 
-    def test_target_and_constraints_reach_both_tiers(self, tmp_path, monkeypatch):
-        uv = _fake_bin(tmp_path / "uv", exit_code=1)
-        seen = []
+    def test_target_constraints_and_overrides_reach_uv(self, tmp_path, monkeypatch):
+        uv = _fake_bin(tmp_path / "uv", exit_code=0)
+        seen: list[list[str]] = []
 
         def spy(cmd, **kw):
             seen.append([str(c) for c in cmd])
-            if str(cmd[0]) == str(uv):
-                return subprocess.CompletedProcess(cmd, 1, "", "resolver no")
-            if "--version" in cmd:
-                return subprocess.CompletedProcess(cmd, 0, "pip", "")
             return subprocess.CompletedProcess(cmd, 0, "", "")
 
         monkeypatch.setattr(pip_ladder.subprocess, "run", spy)
@@ -144,49 +130,90 @@ class TestTierPolicy:
             uv_bin=str(uv),
             target=tmp_path / "overlay",
             constraints=tmp_path / "cons.txt",
+            overrides=tmp_path / "over.txt",
         )
 
-        installs = [c for c in seen if "install" in c and "--version" not in c]
-        for cmd in installs:
-            assert "--target" in cmd and "--constraint" in cmd
+        assert len(seen) == 1
+        cmd = seen[0]
+        assert "--target" in cmd and "--constraint" in cmd and "--overrides" in cmd
 
-    def test_ensurepip_heals_a_pipless_venv(self, monkeypatch):
-        """The `uv venv` no-pip case, with uv also unavailable: the
-        ladder must bootstrap pip rather than dead-ending."""
-        stages = {"probed": False, "bootstrapped": False}
-
-        def spy(cmd, **kw):
-            cmd_s = [str(c) for c in cmd]
-            if "--version" in cmd_s:
-                stages["probed"] = True
-                return subprocess.CompletedProcess(cmd, 1, "", "No module named pip")
-            if "ensurepip" in cmd_s:
-                stages["bootstrapped"] = True
-                return subprocess.CompletedProcess(cmd, 0, "", "")
-            return subprocess.CompletedProcess(cmd, 0, "installed", "")
-
-        monkeypatch.setattr(pip_ladder.subprocess, "run", spy)
-
-        out = pip_ladder.pip_install(["pkg"], uv_bin=None)
-
-        assert out.ok and out.tier == "pip"
-        assert stages == {"probed": True, "bootstrapped": True}
-
-    def test_never_raises(self, monkeypatch):
+    def test_never_raises(self, tmp_path, monkeypatch):
         def explode(cmd, **kw):
             raise OSError("everything is broken")
 
         monkeypatch.setattr(pip_ladder.subprocess, "run", explode)
 
-        out = pip_ladder.pip_install(["pkg"], uv_bin=None)
+        out = pip_ladder.pip_install(["pkg"], uv_bin=str(tmp_path / "uv"))
 
         assert not out.ok
-        assert "broken" in out.stderr or "failed" in out.stderr
+        assert "broken" in out.stderr or "could not run" in out.stderr
+
+
+class TestNoPipTier:
+    """The pip tier must not come back.
+
+    It was removed because pip resolves without uv policy: no
+    exclude-newer, no [tool.uv] overrides, and no --overrides flag at
+    all (which forced a second --no-deps repair pass against a tree pip
+    had already changed). A reintroduced pip tier restores every one of
+    those faults silently.
+    """
+
+    def test_module_spawns_no_pip_and_no_ensurepip(self):
+        """No `python -m pip` and no ensurepip spawn in the module.
+
+        `uv pip install` is the uv subcommand, not pip, so the check
+        looks for the `-m` module-invocation shape and for ensurepip by
+        name.
+        """
+        source = Path(pip_ladder.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        offenders: list[str] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = (
+                func.attr
+                if isinstance(func, ast.Attribute)
+                else func.id if isinstance(func, ast.Name) else None
+            )
+            if name not in {"run", "Popen", "check_call", "check_output"}:
+                continue
+            for arg in node.args:
+                literals = {
+                    n.value
+                    for n in ast.walk(arg)
+                    if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                }
+                if "ensurepip" in literals or ("-m" in literals and "pip" in literals):
+                    offenders.append(f"line {node.lineno}: {ast.unparse(arg)[:80]}")
+
+        assert not offenders, (
+            "installation/pip_ladder.py spawns pip or ensurepip again:\n  "
+            + "\n  ".join(offenders)
+        )
+
+    def test_result_tiers_are_uv_or_none(self):
+        source = Path(pip_ladder.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        tiers: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id == "LadderResult" and len(node.args) == 4:
+                    last = node.args[3]
+                    if isinstance(last, ast.Constant) and isinstance(last.value, str):
+                        tiers.add(last.value)
+
+        assert tiers, "no LadderResult constructions found — did the shape change?"
+        assert tiers <= {"uv", "none"}, f"a non-uv tier is back: {sorted(tiers)}"
 
 
 class TestConsumersRideTheLadder:
-    """The three former copies must actually delegate — a revert to a
-    private ladder would silently restore the drift this killed."""
+    """The former copies must actually delegate — a revert to a private
+    ladder would silently restore the drift this killed."""
 
     @pytest.mark.parametrize(
         "module_name,function_name",
@@ -196,7 +223,6 @@ class TestConsumersRideTheLadder:
         ],
     )
     def test_the_copy_is_gone(self, module_name, function_name):
-        import ast
         import importlib
 
         module = importlib.import_module(module_name)
@@ -210,7 +236,7 @@ class TestConsumersRideTheLadder:
                 and node.name == function_name
             ):
                 # Judge the CODE, not the docstring — prose is allowed to
-                # mention ensurepip when explaining what the ladder does.
+                # mention ensurepip when explaining what was removed.
                 body = list(node.body)
                 if (
                     body
@@ -223,7 +249,7 @@ class TestConsumersRideTheLadder:
                 )
                 assert "pip_ladder" in code_src, (
                     f"{module_name}.{function_name} no longer delegates to "
-                    f"installation.pip_ladder — the third copy is back"
+                    f"installation.pip_ladder — the copy is back"
                 )
                 assert "ensurepip" not in code_src, (
                     f"{module_name}.{function_name} grew its own ladder again"
