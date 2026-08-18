@@ -14,13 +14,12 @@ platform-gated features are supported), see **[Platform Support](./platform-supp
 :::
 
 ## Quick Install
-### With the Hermes Desktop installer on macOS or Windows (recommended)
-To easily install the command-line and desktop applications, [download the Hermes Desktop installer](https://hermes-agent.nousresearch.com/) from our website and run it.
 
-### Without Hermes Desktop:
-For a command-line only install without Hermes Desktop, run:
+Two equal paths — pick whichever fits how you work:
 
-#### Linux / macOS / WSL2 / Android (Termux)
+### The one-liner (CLI install)
+
+#### Linux / macOS / WSL2
 ```bash
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 ```
@@ -31,6 +30,13 @@ Run in powershell:
 ```powershell
 iex (irm https://hermes-agent.nousresearch.com/install.ps1) 
 ```
+
+### The desktop installer (macOS or Windows)
+
+[Download Hermes Desktop](https://hermes-agent.nousresearch.com/) from our
+website and run it — it installs the command-line and desktop applications
+together. On Windows, Hermes Setup is the same install engine as the
+one-liner with a graphical front end.
 
 If you want to install & run Hermes Desktop after a command-line only install, simply run
 ```bash
