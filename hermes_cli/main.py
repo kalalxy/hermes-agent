@@ -1698,28 +1698,39 @@ def _tui_need_npm_install(root: Path) -> bool:
 
 
 def _ensure_tui_node() -> None:
-    """Make sure `node` + `npm` are on PATH for the TUI.
+    """Make sure the pinned `node` + `npm` are provisioned, and on PATH.
 
-    Missing Node is provisioned by the runtime provisioner (the ONE dep
-    engine — hermes-home lifetime split, phase 2.6), which installs the
-    pinned version into the install-scoped runtime dir. The managed bin
-    dirs are then prepended to this process's PATH so ``shutil.which``
-    finds them.
+    The TUI runs on the pinned Node this install provisions, never on a
+    system one: that is what the pin is for. So the question here is whether
+    the managed tools are in this install's runtime dir, which the registry
+    facts answer. A PATH probe answers a different question — it says yes to
+    any node of any version, and saying yes skips the provisioning that would
+    have installed the right one.
 
-    Idempotent no-op when node+npm are already discoverable. Set
-    ``HERMES_SKIP_NODE_BOOTSTRAP=1`` to disable auto-install.
+    The managed bin dirs go on this process's PATH either way, because the
+    TUI child and everything it spawns inherit that PATH and must reach the
+    same toolchain the parent resolved.
+
+    Set ``HERMES_SKIP_NODE_BOOTSTRAP=1`` to refuse the auto-install. The TUI
+    then fails at the point of use, naming the tool it could not find.
     """
-    if shutil.which("node") and shutil.which("npm"):
-        return
-    if os.environ.get("HERMES_SKIP_NODE_BOOTSTRAP"):
-        return
+    from installation import registry
 
-    try:
-        from installation.provisioner import provision_tool
+    if not all(registry.tool_path(tool) for tool in ("node", "npm")):
+        if os.environ.get("HERMES_SKIP_NODE_BOOTSTRAP"):
+            return
+        try:
+            from installation.provisioner import provision_tool
 
-        provision_tool("node")
-    except Exception:  # noqa: BLE001 — no Node is a degrade, not a crash
-        return
+            # npm extends node, so provisioning npm brings both. Each tool
+            # already at its pin takes the no-op fast path.
+            result = provision_tool("npm")
+        except Exception as exc:  # noqa: BLE001 — reported, then left to the caller
+            print(f"Could not provision the pinned Node toolchain: {exc}")
+            return
+        if not result.ok:
+            print(f"Could not provision the pinned Node toolchain: {result.detail}")
+            return
 
     from installation.env import managed_path_dirs
 

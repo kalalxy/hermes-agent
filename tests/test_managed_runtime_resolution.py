@@ -71,13 +71,6 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "Fallback rung of _append_node_dir_for_service(), after the managed "
         "dirs from managed_path_dirs() are already appended."
     ),
-    ("hermes_cli/main.py", "node"): (
-        "_ensure_tui_node()'s idempotence gate: the question really is 'is "
-        "node already discoverable on PATH', before bootstrapping one."
-    ),
-    ("hermes_cli/main.py", "npm"): (
-        "Same _ensure_tui_node() gate as node."
-    ),
 }
 
 
