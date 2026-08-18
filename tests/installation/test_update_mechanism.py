@@ -166,13 +166,25 @@ class TestLaneValues:
         assert '"updateMechanism":"external"' in lane
 
     def test_desktop_payload_lane_is_electron_updater(self):
+        """The staging lane defaults to electron-updater and takes the
+        per-pass override through HERMES_PAYLOAD_UPDATE_MECHANISM (the
+        win32 msix pass rebuilds top-down with `external`)."""
         lane = self._lane("apps/desktop/scripts/stage-agent-payloads.mjs")
-        assert '"--update-mechanism", "electron-updater"' in lane
+        assert (
+            '"--update-mechanism", process.env.HERMES_PAYLOAD_UPDATE_MECHANISM || "electron-updater"'
+            in lane
+        )
 
     def test_desktop_dev_build_is_electron_updater(self):
+        """The build script stamps through write-shell-stamp.mjs, whose
+        default (env knob unset — every dev build) is electron-updater."""
         lane = self._lane("apps/desktop/package.json")
         build = json.loads(lane)["scripts"]["build"]
-        assert "--update-mechanism electron-updater" in build
+        assert "write-shell-stamp.mjs" in build
+        writer = self._lane("apps/desktop/scripts/write-shell-stamp.mjs")
+        assert (
+            "process.env.HERMES_PAYLOAD_UPDATE_MECHANISM || 'electron-updater'" in writer
+        )
 
     def test_installer_engines_stamp_self(self):
         sh = self._lane("scripts/install.sh")
