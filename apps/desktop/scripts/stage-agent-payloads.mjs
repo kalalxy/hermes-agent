@@ -539,10 +539,12 @@ function stageRepo(tag, outDir) {
     "--distance", "0",
     "--source", "ci",
     "--distribution", "desktop-app",
-    // The NSIS/dmg/AppImage artifacts update through electron-updater.
-    // The MSIX lane re-stamps with `external` (store-managed) in its own
-    // pack pass — this staging default covers the electron-updater trio.
-    "--update-mechanism", "electron-updater",
+    // The NSIS/dmg/AppImage artifacts update through electron-updater;
+    // the MSIX pack pass is a full top-down rebuild that sets
+    // HERMES_PAYLOAD_UPDATE_MECHANISM=external (store-managed) — the same
+    // knob write-shell-stamp.mjs reads, so the shell stamp and this
+    // payload stamp always agree within one pass.
+    "--update-mechanism", process.env.HERMES_PAYLOAD_UPDATE_MECHANISM || "electron-updater",
   ])
   return commit
 }
