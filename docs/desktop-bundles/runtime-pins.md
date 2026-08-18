@@ -77,9 +77,14 @@ until something asks for it. The on-demand path provisions it through
 `provision_tool`. Once the facts record it, the normal sweep owns it
 like any other tool.
 
-**`missingTargets`** declares a gap with a reason. Only optional tools
-can declare gaps. A required tool with a hole bricks the whole
-install on that platform, so the table loader refuses it.
+**A gap is declared inside `files`.** Each target names either an
+artifact (`url` + `sha256`) or a reason there is none
+(`{"missing": "..."}`). One key per target, and the two shapes are
+mutually exclusive, so "present and absent at once" cannot be written
+down. A per-target tool names every target: a row that is simply absent
+and a deliberate gap read alike, and only one of them is a bug. Only
+optional tools can declare gaps. A required tool with a hole bricks the
+whole install on that platform, so the table loader refuses it.
 
 Two tools stay off PATH on purpose. `onPath: false` keeps the playwright
 browser trees off PATH. A browser binary ahead of the user's own on

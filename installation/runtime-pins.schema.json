@@ -38,12 +38,30 @@
       "properties": {
         "version": {
           "type": "string",
-          "description": "Exact upstream version string (no ranges).",
-          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.]+)?$"
+          "description": "Exact upstream version string (no ranges). Semver, or a bare revision number for upstreams that number builds rather than release them (playwright's chromium).",
+          "oneOf": [
+            { "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.]+)?$" },
+            { "pattern": "^[0-9]+$" }
+          ]
         },
         "$comment": {
           "type": "string",
           "description": "Notes on why this tool/version/build variant was chosen."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "A capability nobody asked for is not downloaded until something asks. Optional tools are staged on demand, may declare missing targets, and their absence is not drift.",
+          "default": false
+        },
+        "onPath": {
+          "type": "boolean",
+          "description": "Whether this tool's bin dir joins the managed PATH. False for artifacts that are not a CLI surface (a browser tree the consumer locates by directory).",
+          "default": true
+        },
+        "python": {
+          "type": "string",
+          "description": "The interpreter version this tool installs. Only 'uv' may carry it: uv IS the installer the pin configures, and python-build-standalone's own checksums travel with it rather than being duplicated here.",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
         },
         "extends": {
           "type": "array",
@@ -53,12 +71,29 @@
         },
         "files": {
           "type": "object",
-          "description": "Map of '<platform>-<arch>' targets to their pinned artifacts, or the single key 'any' when one artifact serves every target.",
+          "description": "Map of '<platform>-<arch>' targets to their pinned artifact, or to a declared gap saying why no artifact exists there. The single key 'any' replaces the whole map when one artifact serves every target. Otherwise every target is named: a silently absent row and a deliberate gap look identical to a reader, and only one of them is a bug.",
           "minProperties": 1,
           "propertyNames": {
             "$ref": "#/$defs/target"
           },
-          "additionalProperties": { "$ref": "#/$defs/artifact" }
+          "additionalProperties": { "$ref": "#/$defs/targetEntry" },
+          "oneOf": [
+            {
+              "required": ["any"],
+              "maxProperties": 1
+            },
+            {
+              "required": [
+                "darwin-arm64",
+                "darwin-x64",
+                "linux-arm64",
+                "linux-x64",
+                "win32-arm64",
+                "win32-x64"
+              ],
+              "not": { "required": ["any"] }
+            }
+          ]
         }
       }
     },
@@ -74,6 +109,26 @@
         "win32-arm64",
         "win32-x64"
       ]
+    },
+    "targetEntry": {
+      "description": "What this target has: an artifact to download, or a reason there is none. Exactly one — the union makes 'present and missing at once' unrepresentable rather than a rule the runtime has to check.",
+      "oneOf": [
+        { "$ref": "#/$defs/artifact" },
+        { "$ref": "#/$defs/missing" }
+      ]
+    },
+    "missing": {
+      "type": "object",
+      "description": "A DECLARED gap. The reason is what separates 'upstream ships no such build' from 'someone forgot a row', and the resolver quotes it when refusing.",
+      "required": ["missing"],
+      "additionalProperties": false,
+      "properties": {
+        "missing": {
+          "type": "string",
+          "description": "Why no artifact exists for this target, in a sentence a user can act on.",
+          "minLength": 1
+        }
+      }
     },
     "artifact": {
       "type": "object",

@@ -53,12 +53,20 @@ let
       or (throw "runtime-pins: no pin target for ${stdenv.hostPlatform.system}");
 
   # A tool either pins one target-independent artifact ('any', a registry
-  # tarball whose bytes do not vary) or one per target. Same resolution
-  # the Python registry does — see `pinned_file`.
+  # tarball whose bytes do not vary) or one entry per target. That entry is
+  # an artifact to download, or a declared gap saying why none exists. Same
+  # resolution the Python registry does — see `pinned_file`.
   artifactOf =
     name: entry:
-    entry.files.any or entry.files.${target}
-      or (throw "runtime-pins: ${name} has no pinned download for ${target}");
+    let
+      spec =
+        entry.files.any or entry.files.${target}
+          or (throw "runtime-pins: ${name} names no entry for ${target}");
+    in
+    if spec ? missing then
+      throw "runtime-pins: ${name} has no build for ${target}: ${spec.missing}"
+    else
+      spec;
 
   # fetchurl's `sha256` takes the bare lowercase hex the table already
   # stores — the same string the Python provisioner verifies, so there is

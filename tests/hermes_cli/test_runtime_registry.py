@@ -63,7 +63,8 @@ class TestCurrentTarget:
         target = rr.current_target()
 
         for tool, entry in rr.load_pins().items():
-            if target in entry.get("missingTargets", {}):
+            spec = entry["files"].get(rr.ANY_TARGET) or entry["files"].get(target, {})
+            if "missing" in spec:
                 assert entry.get("optional", False), (
                     f"{tool} is required but declares a gap on {target}"
                 )
@@ -280,9 +281,10 @@ class TestRealPinTable:
         }
 
         for tool, entry in rr.load_pins().items():
-            declared_missing = entry.get("missingTargets", {})
+            files = entry["files"]
             for target in expected:
-                if target in declared_missing:
+                spec = files.get(rr.ANY_TARGET) or files.get(target, {})
+                if "missing" in spec:
                     # The gap is allowed ONLY as an explicit, reasoned
                     # declaration — and the resolver must surface it.
                     with pytest.raises(KeyError, match="has no build for"):
@@ -295,6 +297,8 @@ class TestRealPinTable:
     def test_every_download_is_https_with_a_full_digest(self):
         for tool, entry in rr.load_pins().items():
             for target, spec in entry["files"].items():
+                if "missing" in spec:
+                    continue
                 assert spec["url"].startswith("https://"), f"{tool}/{target}"
                 assert len(spec["sha256"]) == 64, f"{tool}/{target}"
                 int(spec["sha256"], 16)  # raises unless it is hex
@@ -326,6 +330,8 @@ class TestRealPinTable:
             by_url: dict[str, str] = {}
             by_digest: dict[str, str] = {}
             for target, spec in entry["files"].items():
+                if "missing" in spec:
+                    continue
                 url, digest = spec["url"], spec["sha256"]
                 if url in by_url:
                     assert by_url[url] == digest, (
@@ -376,13 +382,11 @@ class TestRealPinTable:
             "a required tool with a hole bricks the install on that platform"
         )
         for target in ("win32-x64", "win32-arm64"):
-            assert target in git["files"], target
+            assert "url" in git["files"][target], target
         for target in ("darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"):
-            assert target not in git["files"], target
-            reason = git["missingTargets"].get(target, "")
             # A declared gap must say WHY, so "upstream ships nothing"
             # stays separable from "someone forgot a row".
-            assert reason, target
+            assert git["files"][target].get("missing"), target
 
     def test_windows_git_is_portablegit_not_mingit(self):
         """MinGit omits bash.exe, which the desktop needs

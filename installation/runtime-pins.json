@@ -1,6 +1,6 @@
 {
   "$schema": "./runtime-pins.schema.json",
-  "$comment": "ONE source of truth, read by the Python provisioner (installation/provisioner.py) and by the desktop payload staging, which shells out to it. Every entry pins an EXACT version plus, per target, the exact download URL and its sha256. No ranges, no 'resolve latest and hope': a build is reproducible, needs no GitHub API (unauthenticated callers get 60 requests/hour), and a tool cannot silently change under users. Bump deliberately: change the version, refresh every url+sha256 for that tool, verify, commit. Tool ORDER is derived from this file too \u2014 see 'extends'.",
+  "$comment": "ONE source of truth, read by the Python provisioner (installation/provisioner.py) and by the desktop payload staging, which shells out to it. Every entry pins an EXACT version plus, per target, the exact download URL and its sha256. No ranges, no 'resolve latest and hope': a build is reproducible, needs no GitHub API (unauthenticated callers get 60 requests/hour), and a tool cannot silently change under users. Bump deliberately: change the version, refresh every url+sha256 for that tool, verify, commit. Tool ORDER is derived from this file too — see 'extends'.",
   "schemaVersion": 2,
   "tools": {
     "node": {
@@ -79,12 +79,6 @@
       "version": "2.53.0",
       "$comment": "Windows only. On Windows we need git bash, so the managed PortableGit is the contract rather than a preference. On macOS and Linux the machine's git is used when it clears the flag floor; see missingTargets.",
       "optional": true,
-      "missingTargets": {
-        "darwin-arm64": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken.",
-        "darwin-x64": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken.",
-        "linux-x64": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken.",
-        "linux-arm64": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken."
-      },
       "files": {
         "win32-x64": {
           "url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.3/PortableGit-2.53.0.3-64-bit.7z.exe",
@@ -93,6 +87,18 @@
         "win32-arm64": {
           "url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.3/PortableGit-2.53.0.3-arm64.7z.exe",
           "sha256": "0db54010054c01f35501cf69e1e32d3710138ecb934d188bd77093afed24300e"
+        },
+        "darwin-arm64": {
+          "missing": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken."
+        },
+        "darwin-x64": {
+          "missing": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken."
+        },
+        "linux-x64": {
+          "missing": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken."
+        },
+        "linux-arm64": {
+          "missing": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken."
         }
       }
     },
@@ -212,10 +218,10 @@
         "win32-x64": {
           "url": "https://cdn.playwright.dev/builds/cft/145.0.7632.6/win64/chrome-win64.zip",
           "sha256": "08476e6fe550ccbc0d11d1ab030292fc4e32d4987400c77b2d1905a6bd13b4f6"
+        },
+        "win32-arm64": {
+          "missing": "no upstream build (neither CfT nor the classic playwright CDN ship windows-arm64); the target keeps the system-browser rung"
         }
-      },
-      "missingTargets": {
-        "win32-arm64": "no upstream build (neither CfT nor the classic playwright CDN ship windows-arm64); the target keeps the system-browser rung"
       }
     },
     "chromium-headless-shell": {
@@ -243,10 +249,10 @@
         "win32-x64": {
           "url": "https://cdn.playwright.dev/builds/cft/145.0.7632.6/win64/chrome-headless-shell-win64.zip",
           "sha256": "839500db9e1b0865961ce8b05134ba3d3d71b82be5dec236d6c87ecd93e082cd"
+        },
+        "win32-arm64": {
+          "missing": "no upstream build (neither CfT nor the classic playwright CDN ship windows-arm64); the target keeps the system-browser rung"
         }
-      },
-      "missingTargets": {
-        "win32-arm64": "no upstream build (neither CfT nor the classic playwright CDN ship windows-arm64); the target keeps the system-browser rung"
       }
     }
   }

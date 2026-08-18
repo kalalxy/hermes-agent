@@ -168,6 +168,14 @@ def load_pins(install_root: Path | None = None) -> dict[str, dict]:
     means a broken install, not a fresh one. Validation is eager and
     total — a typo in a digest should fail at load, not halfway through a
     user's first launch.
+
+    One rule lives in ``runtime-pins.schema.json`` instead of here: that a
+    per-target entry names EVERY target, each with an artifact or a
+    reasoned gap. The schema validates the shipping table, where a
+    silently absent row and a deliberate gap read alike and only one is a
+    bug. This function also loads the small single-target tables that
+    tests and tools build by hand, and the provisioner only ever resolves
+    the one target it runs on.
     """
     path = pins_path(install_root)
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -223,34 +231,39 @@ def load_pins(install_root: Path | None = None) -> dict[str, dict]:
         files = entry.get("files")
         if not isinstance(files, dict) or not files:
             raise ValueError(f"{path}: tool {name!r} has no 'files' table")
-        missing = entry.get("missingTargets", {})
-        if not isinstance(missing, dict) or not all(
-            isinstance(k, str) and isinstance(v, str) and v for k, v in missing.items()
-        ):
-            # A declared gap must SAY WHY — the reason string is what
-            # separates "upstream ships no such build" from "someone
-            # forgot a row", and the resolver shows it when refusing.
-            raise ValueError(
-                f"{path}: tool {name!r} 'missingTargets' must map target → reason"
-            )
-        if set(missing) & set(files):
-            raise ValueError(
-                f"{path}: tool {name!r} declares targets both present and missing"
-            )
-        if missing and not entry.get("optional", False):
-            # A REQUIRED tool with a hole would brick the whole install
-            # on that platform; only capability tools may declare gaps.
-            raise ValueError(
-                f"{path}: tool {name!r} is required but declares missingTargets"
-            )
         if ANY_TARGET in files and len(files) > 1:
             raise ValueError(
                 f"{path}: tool {name!r} mixes {ANY_TARGET!r} with per-target files; "
                 f"one artifact serves every target, or each target names its own"
             )
+        declared_missing = {
+            target for target, spec in files.items()
+            if isinstance(spec, dict) and "missing" in spec
+        }
+        if declared_missing and not entry.get("optional", False):
+            # A REQUIRED tool with a hole would brick the whole install
+            # on that platform; only capability tools may declare gaps.
+            raise ValueError(
+                f"{path}: tool {name!r} is required but declares missing targets "
+                f"({', '.join(sorted(declared_missing))})"
+            )
         for target, spec in files.items():
             if not isinstance(spec, dict):
                 raise ValueError(f"{path}: {name}/{target} is not an object")
+            if "missing" in spec:
+                # A declared gap must SAY WHY — the reason string is what
+                # separates "upstream ships no such build" from "someone
+                # forgot a row", and the resolver shows it when refusing.
+                reason = spec["missing"]
+                if not isinstance(reason, str) or not reason:
+                    raise ValueError(
+                        f"{path}: {name}/{target} 'missing' needs a reason"
+                    )
+                if set(spec) != {"missing"}:
+                    raise ValueError(
+                        f"{path}: {name}/{target} is both missing and pinned"
+                    )
+                continue
             url = spec.get("url")
             sha256 = spec.get("sha256")
             if not isinstance(url, str) or not _is_allowed_url(url):
@@ -407,13 +420,12 @@ def pinned_file(
     key = target or current_target()
     spec = files.get(ANY_TARGET) if ANY_TARGET in files else files.get(key)
     if spec is None:
-        reason = entry.get("missingTargets", {}).get(key)
-        if reason:
-            # A DECLARED gap: upstream genuinely ships nothing here. The
-            # distinct message keeps "fill the table" bugs separable
-            # from "this capability does not exist on this platform".
-            raise KeyError(f"{tool!r} has no build for {key}: {reason}")
         raise KeyError(f"{tool!r} has no pinned download for {key}")
+    if "missing" in spec:
+        # A DECLARED gap: upstream genuinely ships nothing here. The
+        # distinct message keeps "fill the table" bugs separable
+        # from "this capability does not exist on this platform".
+        raise KeyError(f"{tool!r} has no build for {key}: {spec['missing']}")
 
     return PinnedFile(version=entry["version"], url=spec["url"], sha256=spec["sha256"])
 

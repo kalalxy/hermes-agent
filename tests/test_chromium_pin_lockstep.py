@@ -80,6 +80,10 @@ class TestChromiumPinLockstep:
         browser_version = browsers["chromium"]["browserVersion"]
         for tool in BROWSER_TOOLS:
             for target, spec in pins[tool]["files"].items():
+                if "missing" in spec:
+                    # A declared gap has no url to check (win32-arm64: no
+                    # upstream build exists on either CDN).
+                    continue
                 url = spec["url"]
                 if "/builds/cft/" in url:
                     assert f"/builds/cft/{browser_version}/" in url, (
