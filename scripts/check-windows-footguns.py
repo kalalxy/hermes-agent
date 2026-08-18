@@ -646,37 +646,61 @@ def _looks_like_string_literal(line: str, match: "re.Match") -> bool:
     return in_s or in_d
 
 
-# Mode-extraction for open()/os.fdopen() calls: captures the positional (or
-# ``mode=`` keyword) mode string so the encoding-direction rules can tell a
-# read from a write. ``open(path, encoding=...)`` with no mode at all is a
-# read — that case is handled by the callers, not this regex. The capture
-# is constrained to Python file-mode characters so a nested-call first
-# argument (``open(os.path.join(root, "x.json"), ...)``) can't donate its
-# string literal as a phantom mode — that exact line in _startup_fast.py
-# false-positived the write rule during the first live sweep.
-_OPEN_MODE_RE = re.compile(
-    r"""\b(?:open|fdopen)\s*\([^)]*?,\s*(?:mode\s*=\s*)?['"]([rwaxbtU+]{1,3})['"]"""
+# Mode-extraction for file-opening calls, so the encoding-direction rules
+# can tell a read from a write. Three shapes, first match wins:
+#   builtin open(path, "r") / os.fdopen(fd, "w")  — mode is the SECOND arg
+#   path.open("a")                                — Path.open: mode is FIRST
+#   open(..., mode="w")                           — keyword anywhere
+# The capture is constrained to Python file-mode characters so a
+# nested-call first argument (``open(os.path.join(root, "x.json"), ...)``)
+# can't donate its string literal as a phantom mode — that exact line in
+# _startup_fast.py false-positived the write rule during the first live
+# sweep. The Path.open row exists because its first-arg mode made
+# ``path.open("a", encoding=...)`` unclassifiable and the read-side
+# fallback rewrote an APPEND to utf-8-sig (BOM'd gateway-exit-diag.log,
+# caught by test_lifecycle_ledger).
+_OPEN_MODE_RES = (
+    re.compile(r"""\bmode\s*=\s*['"]([rwaxbtU+]{1,3})['"]"""),
+    re.compile(r"""(?<![.\w])(?:open|fdopen)\s*\([^)]*?,\s*['"]([rwaxbtU+]{1,3})['"]"""),
+    re.compile(r"""\bfdopen\s*\([^)]*?,\s*['"]([rwaxbtU+]{1,3})['"]"""),
+    re.compile(r"""\.open\s*\(\s*['"]([rwaxbtU+]{1,3})['"]"""),
 )
+
+
+def _extract_mode(line: str) -> str | None:
+    for rx in _OPEN_MODE_RES:
+        m = rx.search(line)
+        if m:
+            return m.group(1)
+    return None
 
 
 def _is_read_shaped(line: str) -> bool:
     """Heuristic: does this line READ a file (so utf-8-sig applies)?
 
-    read_text() is a read by name; write_text() a write. For open()/fdopen()
-    the mode string decides: anything containing w/a/x/+ can write, plain
-    'r' (or omitted mode — Python's default) is a read. Lines with no
-    file-opening call at all (subprocess encoding=, TextIOWrapper, ...)
-    are NOT classified as reads — the rule stays quiet rather than guess.
+    read_text() is a read by name; write_text() a write. For open()/
+    fdopen()/Path.open() the mode string decides: anything containing
+    w/a/x/+ can write, plain 'r' is a read. A bare builtin open()/fdopen()
+    with the mode omitted defaults to 'r' — but an omitted-mode `.open(`
+    METHOD call is NOT classified (we can't know the receiver; Path.open
+    defaults to read, but the sweep must never rewrite on a guess).
+    Lines with no file-opening call at all (subprocess encoding=,
+    TextIOWrapper, ...) are NOT classified as reads — the rule stays
+    quiet rather than guess.
     """
     if ".read_text(" in line:
         return True
     if ".write_text(" in line:
         return False
-    m = _OPEN_MODE_RE.search(line)
-    if m:
-        return not any(c in m.group(1) for c in "wax+")
-    # open()/fdopen() with the mode omitted defaults to 'r'.
-    return bool(re.search(r"\b(?:open|fdopen)\s*\(", line))
+    mode = _extract_mode(line)
+    if mode is not None:
+        return not any(c in mode for c in "wax+")
+    # open()/fdopen() with the mode omitted defaults to 'r'. Builtin-call
+    # boundary only: `.open(`-method calls without a recognizable mode
+    # stay unclassified (the Path.open("a") lesson above).
+    return bool(re.search(r"(?<![.\w])(?:open|fdopen)\s*\(", line)) or bool(
+        re.search(r"\bfdopen\s*\(", line)
+    )
 
 
 def _is_write_shaped(line: str) -> bool:
@@ -690,9 +714,9 @@ def _is_write_shaped(line: str) -> bool:
         return True
     if ".read_text(" in line:
         return False
-    m = _OPEN_MODE_RE.search(line)
-    if m:
-        return any(c in m.group(1) for c in "wax+")
+    mode = _extract_mode(line)
+    if mode is not None:
+        return any(c in mode for c in "wax+")
     return False
 
 

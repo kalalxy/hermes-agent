@@ -180,6 +180,19 @@ class TestWriteRuleDetection:
         line = "    f = os.fdopen(fd, 'w', encoding='utf-8-sig')"
         assert _scan_line(linter, line, WRITE_RULE)
 
+    def test_flags_path_open_append_utf8_sig(self, linter):
+        # Path.open puts the mode in the FIRST argument — the original
+        # classifier only understood the builtin second-arg shape, so the
+        # live sweep rewrote 18 append/write sites to utf-8-sig (BOM per
+        # append in jsonl logs; caught by test_lifecycle_ledger).
+        line = '    with path.open("a", encoding="utf-8-sig") as fh:'
+        assert _scan_line(linter, line, WRITE_RULE)
+
+    def test_flags_path_open_plus_mode_utf8_sig(self, linter):
+        # r+/a+ can write at position 0 — write-shaped.
+        line = '    lock = path.open("a+", encoding="utf-8-sig")'
+        assert _scan_line(linter, line, WRITE_RULE)
+
     def test_flags_underscore_spelling(self, linter):
         line = '    path.write_text(data, encoding="utf_8_sig")'
         assert _scan_line(linter, line, WRITE_RULE)
@@ -219,6 +232,22 @@ class TestWriteRuleNegatives:
             'encoding="utf-8-sig") as handle:'
         )
         assert not _scan_line(linter, line, WRITE_RULE)
+
+    def test_does_not_flag_path_open_read_mode_utf8_sig(self, linter):
+        line = '    with path.open("r", encoding="utf-8-sig") as fh:'
+        assert not _scan_line(linter, line, WRITE_RULE)
+
+    def test_read_rule_does_not_rewrite_path_open_append(self, linter):
+        # The inverse guard on the READ rule: an append-mode Path.open with
+        # plain utf-8 is CORRECT and must never be flagged for conversion.
+        line = '    with path.open("a", encoding="utf-8") as fh:'
+        assert not _scan_line(linter, line, READ_RULE)
+
+    def test_read_rule_skips_method_open_without_mode(self, linter):
+        # `.open(` with no recognizable mode is unclassified — the sweep
+        # must never rewrite on a guess about the receiver.
+        line = '    with something.open(encoding="utf-8") as fh:'
+        assert not _scan_line(linter, line, READ_RULE)
 
     def test_does_not_flag_suppressed_line(self, linter):
         line = (
