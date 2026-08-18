@@ -152,9 +152,9 @@ while any file is held open. PortableGit's thousands of files make git
 the reliable loser of that race. The retry backs off for about 15
 seconds before giving up. Non-Windows takes the first call.
 
-## System tools and the Termux lane
+## System tools
 
-The provisioner prefers machine-provided tools in two cases.
+The provisioner prefers a machine-provided tool in one case.
 
 **System git first.** On POSIX, a machine git that clears the flag
 floor beats a 147 MB download. The floor is 2.31, and it is derived,
@@ -170,13 +170,6 @@ A system git is recorded with `source: "system"` and an absolute path.
 It is never on the managed PATH, and it is never handed tool-specific
 env. A fact recorded as system is kept on every later sweep while the
 binary exists and still clears the floor.
-
-**Termux is one verify-only lane.** Every pinned artifact is a glibc
-build, and Termux is bionic. Nothing in the table can run there. The
-Termux lane verifies what `pkg` installed, checks it against a floor,
-and records it as a system fact. Versions are constraints there, not
-pins: pkg ships one rolling build per tool. A failed check prints the
-exact `pkg install` line, because a download URL is a lie there.
 
 ## Environment assembly
 

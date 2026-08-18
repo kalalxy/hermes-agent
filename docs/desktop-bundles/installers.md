@@ -2,7 +2,7 @@
 
 This document explains the installers and the uninstaller. Before this
 restack, each installer carried its own copy of the install logic: its
-own uv installer, its own dependency tiers, its own Termux handling.
+own uv installer and its own dependency tiers.
 Now the installers delegate to the shared engine. The engine has four
 parts, and every installer runs the same four:
 
@@ -15,7 +15,7 @@ parts, and every installer runs the same four:
 What remains in each installer is what is unique to that path: OS
 detection, package-manager logic, and where to put the `hermes` command.
 
-## install.sh (Linux, macOS, Termux)
+## install.sh (Linux, macOS)
 
 `scripts/install.sh` is the POSIX installer:
 
@@ -52,10 +52,6 @@ Root installs use an FHS layout: code at `/usr/local/lib/hermes-agent`,
 command at `/usr/local/bin/hermes`, data still at `$HERMES_HOME`. The
 layout matches Claude Code and Codex CLI and keeps Docker bind-mounted
 volumes lean.
-
-Termux gets one dedicated lane: a stdlib venv plus pip, because the
-pinned uv and the pinned tools do not run on bionic. The provisioner's
-verify-only lane then records the `pkg`-installed tools.
 
 The installer also writes the install manifest (`.hermes-install.json`)
 and the install stamp, so the new tree can tell its own story about
@@ -110,8 +106,7 @@ used to be a fourth, parallel implementation of "install Hermes". It is
 now a wrapper over the same engine: pinned uv from the generated
 fragment, `venv_sync`, the provisioner, and `post_update`. The only
 logic that lives here is what is unique to a dev checkout: where to
-symlink the CLI (`~/.local/bin`, or `$PREFIX/bin` on Termux) and the
-Termux stdlib-venv lane.
+symlink the CLI (`~/.local/bin`).
 
 ## The uninstaller
 

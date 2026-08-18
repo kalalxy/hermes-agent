@@ -176,7 +176,7 @@ set, and a symbol wrongly dropped from the set is a bricked update for
 whoever reaches that branch. A false positive costs one kept symbol. A
 dynamic trace has the opposite bias and is the wrong tool here: one run
 takes one path, and it never enters the diverged-history reset, the
-Windows rollback, the Termux rung, or the ZIP fallback.
+Windows rollback, or the ZIP fallback.
 
 Three dynamic patterns matter and are handled explicitly:
 
