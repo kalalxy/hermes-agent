@@ -411,17 +411,6 @@ class TestSubprocessCompatHelpers:
         from hermes_cli import _subprocess_compat as sc
         assert sc.IS_WINDOWS == (sys.platform == "win32")
 
-    def test_resolve_node_command_returns_absolute_on_posix(self):
-        """On Linux, resolve_node_command('sh', ['-c','echo hi']) picks up /bin/sh."""
-        from hermes_cli._subprocess_compat import resolve_node_command
-        # We can't assert "npm is on PATH" portably; use `sh` which is
-        # guaranteed on POSIX.  On Windows the test only confirms the
-        # no-crash fallback path.
-        argv = resolve_node_command("sh", ["-c", "echo hi"])
-        assert argv[1:] == ["-c", "echo hi"]
-        # First element is either an absolute path (sh found) or the bare
-        # name (fallback) — both are acceptable behaviours.
-
 
     @pytest.mark.windows_only
     def test_windows_detach_flags_exclude_detached_process(self):
@@ -635,9 +624,9 @@ class TestCronSchedulerBashResolution:
 
 
 class TestNpmBareSpawnsResolved:
-    """Every spawn site that launches ``npm``/``npx`` must resolve via
-    shutil.which / hermes_cli._subprocess_compat.resolve_node_command
-    so Windows can execute the .cmd batch shims."""
+    """Every spawn site that launches ``npm``/``npx`` must resolve to an
+    absolute path (the managed pin, or shutil.which) so Windows can execute
+    the .cmd batch shims."""
 
     @pytest.mark.parametrize(
         "relpath",

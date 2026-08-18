@@ -36,7 +36,6 @@ from typing import Mapping, Sequence
 
 __all__ = [
     "IS_WINDOWS",
-    "resolve_node_command",
     "split_command_line",
     "suppress_platform_ver_console",
     "windows_detach_flags",
@@ -82,49 +81,6 @@ def split_command_line(line: str) -> list[str]:
             tok = tok[1:-1]
         out.append(tok)
     return out
-
-
-# -----------------------------------------------------------------------------
-# Node ecosystem launcher resolution
-# -----------------------------------------------------------------------------
-
-
-def resolve_node_command(name: str, argv: Sequence[str]) -> list[str]:
-    """Resolve a Node-ecosystem command name to an absolute-path argv.
-
-    On Windows, commands like ``npm``, ``npx``, ``yarn``, ``pnpm``,
-    ``playwright``, ``prettier`` ship as ``.cmd`` files (batch shims).
-    ``subprocess.Popen(["npm", "install"])`` fails with WinError 193
-    because CreateProcessW doesn't execute batch files directly.
-
-    ``shutil.which(name)`` *does* resolve ``.cmd`` via PATHEXT and returns
-    the fully-qualified path — which CreateProcessW accepts because the
-    extension tells Windows to route through ``cmd.exe /c``.
-
-    On POSIX ``shutil.which`` also returns a fully-qualified path when
-    found.  That's a small change from bare-name resolution (the OS does
-    its own PATH search) but functionally identical and has the side
-    benefit of making the argv reproducible in logs.
-
-    Behavior when the command is not on PATH:
-    - On Windows: return the bare name — caller can still try with
-      ``shell=True`` as a last resort, OR the subsequent Popen will
-      raise FileNotFoundError with a readable error we want to surface.
-    - On POSIX: same.  Bare ``npm`` on a Linux box without npm installed
-      fails the same way it did before this function existed.
-
-    Args:
-        name: The command name to resolve (``npm``, ``npx``, ``node`` …).
-        argv: The remaining arguments.  Must NOT include ``name`` itself —
-            this function builds the full argv list.
-
-    Returns:
-        A list suitable for passing to subprocess.Popen/run/call.
-    """
-    resolved = shutil.which(name)
-    if resolved:
-        return [resolved, *argv]
-    return [name, *argv]
 
 
 # -----------------------------------------------------------------------------
