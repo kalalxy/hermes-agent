@@ -22,7 +22,7 @@ name: Nightly Release
 
 on:
   schedule:
-    - cron: '30 8 * * *' # daily, 08:30 UTC — after the US-evening push wave
+    - cron: '0 8 * * *' # daily, 0300 EST / 0800 UTC, middle of the night when most stuff will be moving less
   workflow_dispatch: {}
 
 permissions:
