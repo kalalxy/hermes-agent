@@ -13221,19 +13221,6 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         reqs = check_voice_requirements()
         if not reqs["audio_available"]:
-            if _is_termux_environment():
-                details = reqs.get("details", "")
-                if "Termux:API Android app is not installed" in details:
-                    raise RuntimeError(
-                        "Termux:API command package detected, but the Android app is missing.\n"
-                        "Install/update the Termux:API Android app, then retry /voice on.\n"
-                        "Fallback: pkg install python-numpy portaudio && python -m pip install sounddevice"
-                    )
-                raise RuntimeError(
-                    "Voice mode requires either Termux:API microphone access or Python audio libraries.\n"
-                    "Option 1: pkg install termux-api and install the Termux:API Android app\n"
-                    "Option 2: pkg install python-numpy portaudio && python -m pip install sounddevice"
-                )
             raise RuntimeError(
                 "Voice mode requires sounddevice and numpy.\n"
                 f"Install with: {sys.executable} -m pip install sounddevice numpy"
@@ -13334,8 +13321,6 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         _label = self._voice_record_key_label()
         if getattr(self._voice_recorder, "supports_silence_autostop", True):
             _recording_hint = f"auto-stops on silence | {_label} to stop & exit continuous"
-        elif _is_termux_environment():
-            _recording_hint = f"Termux:API capture | {_label} to stop"
         else:
             _recording_hint = f"{_label} to stop"
         _cprint(f"\n{_ACCENT}● Recording...{_RST} {_DIM}({_recording_hint}){_RST}")
@@ -13805,12 +13790,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             for line in reqs["details"].split("\n"):
                 _cprint(f"  {_DIM}{line}{_RST}")
             if reqs["missing_packages"]:
-                if _is_termux_environment():
-                    _cprint(f"\n  {_BOLD}Option 1: pkg install termux-api{_RST}")
-                    _cprint(f"  {_DIM}Then install/update the Termux:API Android app for microphone capture{_RST}")
-                    _cprint(f"  {_BOLD}Option 2: pkg install python-numpy portaudio && python -m pip install sounddevice{_RST}")
-                else:
-                    _cprint(f"\n  {_BOLD}Install: {sys.executable} -m pip install {' '.join(reqs['missing_packages'])}{_RST}")
+                _cprint(f"\n  {_BOLD}Install: {sys.executable} -m pip install {' '.join(reqs['missing_packages'])}{_RST}")
             return
 
         with self._voice_lock:
