@@ -42,7 +42,8 @@ automatically.
 ## Prerequisites
 
 - A Photon account — sign up at [app.photon.codes][app]
-- **Node.js 18.17 or newer** on PATH (`node --version`)
+- Nothing to install for Node: the sidecar runs on the Node that every
+  Hermes install provisions
 - A phone number that can receive iMessage (used to bind your account)
 
 That's it — there is no public URL or tunnel to set up.
@@ -180,14 +181,14 @@ Photon iMessage status
   project secret      : ✓ stored
   my number           : +15551234567
   assigned number     : +16282679185
-  node binary         : /usr/bin/node
+  node binary         : /home/you/.hermes/runtime/store/node-26.7.0/bin/node
   sidecar deps        : ✓ installed
 ```
 
 Common issues:
 
-- **`sidecar deps : ✗ run hermes photon install-sidecar`** — Node is
-  installed but `spectrum-ts` isn't. Run the suggested command.
+- **`sidecar deps : ✗ run hermes photon install-sidecar`** — `spectrum-ts`
+  is not installed yet. Run the suggested command.
 - **`device token : ✗ missing`** — run `hermes photon setup` to log in.
 - **`No iMessage line assigned yet`** — Spectrum is enabled but no line
   has been provisioned; re-run `hermes photon setup` or check the
@@ -236,7 +237,6 @@ Common issues:
 | `PHOTON_PROJECT_SECRET`   | from `.env`        | Project secret; set by setup               |
 | `PHOTON_SIDECAR_PORT`     | `8789`             | Loopback port for the sidecar control + inbound channel |
 | `PHOTON_SIDECAR_AUTOSTART`| `true`             | Whether the adapter spawns the sidecar     |
-| `PHOTON_NODE_BIN`         | `which node`       | Override the Node binary path              |
 | `PHOTON_HOME_CHANNEL`     | (unset)            | Default space id for cron / notifications  |
 | `PHOTON_HOME_CHANNEL_NAME`| (unset)            | Human label for the home channel           |
 | `PHOTON_ALLOWED_USERS`    | (unset)            | Comma-separated E.164 allowlist            |

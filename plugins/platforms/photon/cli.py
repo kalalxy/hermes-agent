@@ -21,12 +21,12 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from hermes_cli.colors import Colors, color
+from installation import env as runtime_env, nodejs
 
 from . import auth as photon_auth
 from .adapter import _NPM_ERROR_LOG_MAX_CHARS, sidecar_deps_installed
@@ -385,9 +385,12 @@ def _cmd_status(_args: argparse.Namespace) -> int:
     # callback is the only sink that sees credential-derived strings, so
     # cli.py keeps zero taint flow according to CodeQL.
     photon_auth.print_credential_summary(print)
-    node_bin = os.getenv("PHOTON_NODE_BIN") or shutil.which("node")
+    try:
+        node_bin: str | None = str(nodejs.node_path())
+    except nodejs.NotProvisioned:
+        node_bin = None
     sidecar_installed = sidecar_deps_installed()
-    print(f"  node binary         : {node_bin or '✗ missing (install Node 18+)'}")
+    print(f"  node binary         : {node_bin or '✗ missing (run `python -m installation.provisioner`)'}")
     print(f"  sidecar deps        : {'✓ installed' if sidecar_installed else '✗ run `hermes photon install-sidecar`'}")
     print(f"  telemetry           : {'on' if _telemetry_enabled() else 'off'} (`hermes photon telemetry on|off`)")
     return 0
@@ -442,14 +445,14 @@ def _cmd_telemetry(args: argparse.Namespace) -> int:
 
 
 def _install_sidecar() -> int:
-    npm = shutil.which("npm") or "npm"
-    if not shutil.which(npm):
-        print(
-            "npm is not on PATH. Install Node.js 18+ (https://nodejs.org/) "
-            "and re-run.",
-            file=sys.stderr,
-        )
+    try:
+        npm = str(nodejs.npm_path())
+    except nodejs.NotProvisioned as exc:
+        print(str(exc), file=sys.stderr)
         return 1
+    # npm's shim is ``#!/usr/bin/env node``, so the pinned node has to be on
+    # PATH for the pinned npm to start at all.
+    npm_env = runtime_env.with_managed_runtimes()
     # spectrum-ts is pinned exactly in package.json/package-lock.json because
     # the SDK ships breaking majors (v2 removed defineFusorPlatform; v3
     # reworked space construction; v5 split it into @spectrum-ts/* packages).
@@ -465,6 +468,7 @@ def _install_sidecar() -> int:
     proc = subprocess.run(  # noqa: S603
         [npm, "ci"],
         cwd=str(_sidecar_dir()),
+        env=npm_env,
         check=False,
         stderr=subprocess.PIPE,
         text=True,
@@ -476,6 +480,7 @@ def _install_sidecar() -> int:
         proc = subprocess.run(  # noqa: S603
             [npm, "install"],
             cwd=str(_sidecar_dir()),
+            env=npm_env,
             check=False,
             stderr=subprocess.PIPE,
             text=True,

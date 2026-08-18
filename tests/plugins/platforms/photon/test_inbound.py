@@ -122,10 +122,14 @@ def test_is_duplicate_window(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_check_requirements_without_node(monkeypatch: pytest.MonkeyPatch) -> None:
-    # If no node binary on PATH the adapter should refuse to start.
+    # An unprovisioned runtime dir means no managed node, so the adapter
+    # refuses to start.
     from plugins.platforms.photon import adapter as adapter_mod
 
-    monkeypatch.setattr(adapter_mod.shutil, "which", lambda _name: None)
+    def _unprovisioned():
+        raise adapter_mod.nodejs.NotProvisioned("node is not in this runtime dir")
+
+    monkeypatch.setattr(adapter_mod.nodejs, "node_path", _unprovisioned)
     assert adapter_mod.check_requirements() is False
 
 

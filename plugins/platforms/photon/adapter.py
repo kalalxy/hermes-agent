@@ -31,7 +31,6 @@ import logging
 import os
 import re
 import secrets
-import shutil
 import signal
 import subprocess
 import sys
@@ -40,6 +39,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urlparse
+
+from installation import env as runtime_env, nodejs
 
 if TYPE_CHECKING:
     # Type checkers see ``httpx`` as the always-imported module, so every use
@@ -423,11 +424,13 @@ def check_requirements() -> bool:
     if not HTTPX_AVAILABLE:
         logger.warning("photon: httpx not installed — pip install httpx")
         return False
-    if not shutil.which(os.getenv("PHOTON_NODE_BIN") or "node"):
-        logger.warning(
-            "photon: node binary '%s' not found on PATH",
-            os.getenv("PHOTON_NODE_BIN") or "node",
-        )
+    try:
+        nodejs.node_path()
+    except nodejs.NotProvisioned as exc:
+        # An availability check that the toolset registry calls to decide what
+        # to show the user, so an unprovisioned tree answers False. The spawn
+        # path fails loud instead, because by then the user asked for Photon.
+        logger.warning("photon: %s", exc)
         return False
     if not sidecar_deps_installed():
         # spectrum-ts not installed yet, or node_modules/ was partially created
@@ -437,14 +440,15 @@ def check_requirements() -> bool:
         # causes check_requirements() to return True while the sidecar crashes
         # at runtime with an unrelated-looking missing-module error.
         #
-        # NS-606: if we can self-install at connect time — npm on PATH and
-        # the (resolved, possibly mirrored) sidecar dir is writable — report
-        # available so the gateway creates the adapter and ``_start_sidecar``
-        # cold-installs from the committed lockfile (on hosted images the
-        # user has no CLI to run `hermes photon setup`, so the connect path
-        # must self-heal). Otherwise keep returning False so
-        # `hermes setup` / status surface the missing-deps state.
-        if bool(shutil.which("npm")) and _dir_writable(_sidecar_dir()):
+        # NS-606: if we can self-install at connect time — the sidecar dir is
+        # writable — report available so the gateway creates the adapter and
+        # ``_start_sidecar`` cold-installs from the committed lockfile (on
+        # hosted images the user has no CLI to run `hermes photon setup`, so
+        # the connect path must self-heal). Otherwise keep returning False so
+        # `hermes setup` / status surface the missing-deps state. The pinned
+        # npm ships beside the pinned node the check above proved present, so
+        # only writability is still in question here.
+        if _dir_writable(_sidecar_dir()):
             return True
         # DEBUG (not WARNING): this is the normal pre-setup state.
         # check_fn() is called from multiple hot paths in the core
@@ -499,10 +503,14 @@ def _reinstall_sidecar_deps() -> None:
     Best-effort — a failure here just leaves the (stale) deps in place and the
     normal ``_start_sidecar`` readiness check reports the real error.
     """
-    npm = shutil.which("npm")
-    if not npm:
-        logger.warning("[photon] cannot reinstall stale sidecar deps: npm not on PATH")
+    try:
+        npm = str(nodejs.npm_path())
+    except nodejs.NotProvisioned as exc:
+        logger.warning("[photon] cannot reinstall stale sidecar deps: %s", exc)
         return
+    # npm's shim is ``#!/usr/bin/env node``, so the pinned node has to be on
+    # PATH for the pinned npm to start at all.
+    npm_env = runtime_env.with_managed_runtimes()
     # Windows: suppress the console flash these short-lived npm runs would
     # otherwise pop (0 elsewhere). Same helper as the sidecar spawn below.
     from hermes_cli._subprocess_compat import windows_hide_flags
@@ -511,6 +519,7 @@ def _reinstall_sidecar_deps() -> None:
         result = subprocess.run(  # noqa: S603
             [npm, "ci"],
             cwd=str(_sidecar_dir()),
+            env=npm_env,
             capture_output=True,
             text=True, encoding="utf-8", errors="replace",
             check=False,
@@ -524,6 +533,7 @@ def _reinstall_sidecar_deps() -> None:
             result = subprocess.run(  # noqa: S603
                 [npm, "install"],
                 cwd=str(_sidecar_dir()),
+                env=npm_env,
                 capture_output=True,
                 text=True, encoding="utf-8", errors="replace",
                 check=False,
@@ -753,7 +763,10 @@ class PhotonAdapter(BasePlatformAdapter):
         self._autostart_sidecar = str(
             os.getenv("PHOTON_SIDECAR_AUTOSTART", "true")
         ).lower() not in ("0", "false", "no")
-        self._node_bin = os.getenv("PHOTON_NODE_BIN") or shutil.which("node") or "node"
+        # Resolved at spawn time, not here: __init__ runs during gateway
+        # config load, where a NotProvisioned exception would take down every
+        # other platform with it. ``_start_sidecar`` turns it into a typed,
+        # non-retryable startup error instead.
 
         # Presence watchdog. spectrum-ts only reconnects when its inbound
         # iterator throws or ends; a half-open ("zombie") gRPC socket makes the
@@ -1629,7 +1642,22 @@ class PhotonAdapter(BasePlatformAdapter):
             await asyncio.to_thread(_reinstall_sidecar_deps)
         await self._reap_stale_sidecar()
 
-        env = os.environ.copy()
+        try:
+            node_bin = str(nodejs.node_path())
+        except nodejs.NotProvisioned as exc:
+            # Deterministic: the managed runtime dir is damaged, and a retry
+            # cannot heal it (OOF-153). Re-provisioning is the only cure.
+            raise PhotonSidecarStartupError(
+                f"Photon needs the managed Node, which this install does not "
+                f"have ({exc}). Run `python -m installation.provisioner`, then "
+                f"restart `hermes gateway`.",
+                code="SIDECAR_NODE_MISSING",
+                retryable=False,
+            ) from exc
+
+        # The sidecar and the patch script both resolve their own imports
+        # through the managed toolchain, so they inherit its PATH and tool env.
+        env = runtime_env.with_managed_runtimes()
         env["PHOTON_PROJECT_ID"] = self._project_id
         env["PHOTON_PROJECT_SECRET"] = self._project_secret
         env["PHOTON_SIDECAR_PORT"] = str(self._sidecar_port)
@@ -1654,10 +1682,11 @@ class PhotonAdapter(BasePlatformAdapter):
             patch = await asyncio.to_thread(
                 subprocess.run,  # noqa: S603
                 [
-                    self._node_bin,
+                    node_bin,
                     str(_sidecar_dir() / "patch-spectrum-mixed-attachments.mjs"),
                     str(_sidecar_dir()),
                 ],
+                env=env,
                 capture_output=True,
                 text=True, encoding='utf-8', errors='replace',
                 timeout=10,
@@ -1678,7 +1707,7 @@ class PhotonAdapter(BasePlatformAdapter):
 
         try:
             self._sidecar_proc = subprocess.Popen(  # noqa: S603
-                [self._node_bin, str(_sidecar_dir() / "index.mjs")],
+                [node_bin, str(_sidecar_dir() / "index.mjs")],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -1690,11 +1719,12 @@ class PhotonAdapter(BasePlatformAdapter):
                 creationflags=windows_hide_flags(),
             )
         except FileNotFoundError as exc:
-            # Deterministic: node isn't on PATH / PHOTON_NODE_BIN points at
-            # nothing. Retrying can never fix a missing binary (OOF-153).
+            # Deterministic: node_path() proved the binary was there a moment
+            # ago, so the runtime dir lost it between the two calls. Retrying
+            # can never fix a missing binary (OOF-153).
             raise PhotonSidecarStartupError(
-                f"node binary not found ({self._node_bin!r}) — install Node.js "
-                f"or set PHOTON_NODE_BIN: {exc}",
+                f"the managed node binary vanished ({node_bin!r}) — run "
+                f"`python -m installation.provisioner` to restore it: {exc}",
                 code="SIDECAR_NODE_MISSING",
                 retryable=False,
             ) from exc

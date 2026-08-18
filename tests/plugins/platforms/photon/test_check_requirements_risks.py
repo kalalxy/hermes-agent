@@ -13,31 +13,12 @@ Remaining risks documented here (still open — separate issues):
 from __future__ import annotations
 
 import logging
-import shutil
-import types
 from pathlib import Path
 
 import pytest
 
 from plugins.platforms.photon import adapter as adapter_mod
 from plugins.platforms.photon import cli as cli_mod
-
-
-# ---------------------------------------------------------------------------
-# Helpers / shared marks
-# ---------------------------------------------------------------------------
-
-_NODE_ON_PATH = shutil.which("node") is not None
-
-_requires_node = pytest.mark.skipif(
-    not _NODE_ON_PATH,
-    reason="requires node on PATH to isolate the node_modules check",
-)
-
-_requires_node_for_false_positive = pytest.mark.skipif(
-    not _NODE_ON_PATH,
-    reason="requires node on PATH so the false-positive path is reachable",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -66,12 +47,40 @@ def test_fix_logs_warning_when_httpx_missing(
     )
 
 
+def test_fix_logs_warning_when_managed_node_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unprovisioned runtime dir answers False and says so.
+
+    check_requirements() is the toolset registry's availability probe, so a
+    damaged runtime dir must not raise through it — the spawn path is where
+    Photon fails loud.
+    """
+    monkeypatch.setattr(adapter_mod, "HTTPX_AVAILABLE", True)
+    monkeypatch.setattr(adapter_mod, "_SIDECAR_DIR", tmp_path)
+
+    def _unprovisioned() -> Path:
+        raise adapter_mod.nodejs.NotProvisioned("node is not in this runtime dir")
+
+    monkeypatch.setattr(adapter_mod.nodejs, "node_path", _unprovisioned)
+
+    with caplog.at_level(logging.WARNING, logger="plugins.platforms.photon.adapter"):
+        result = adapter_mod.check_requirements()
+
+    assert result is False
+    messages = [r.message for r in caplog.records]
+    assert any("node" in m for m in messages), (
+        f"Expected a warning naming node, got: {messages}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Risk 2 (open) — empty node_modules directory is a false positive
 # ---------------------------------------------------------------------------
 
 
-@_requires_node_for_false_positive
 def test_risk2_fix_empty_node_modules_no_longer_passes_guard(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -94,11 +103,6 @@ def test_risk2_fix_empty_node_modules_no_longer_passes_guard(
 
 
 # ---------------------------------------------------------------------------
-# Risk 3 fix — npm stderr is captured, persisted, and surfaced by check_requirements
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # Shared predicate — status / _start_sidecar / check_requirements must agree
 # ---------------------------------------------------------------------------
 
@@ -116,5 +120,3 @@ def test_sidecar_deps_installed_false_on_empty_node_modules(
     monkeypatch.setattr(adapter_mod, "_SIDECAR_DIR", tmp_path)
     (tmp_path / "node_modules").mkdir()  # empty — spectrum-ts absent
     assert adapter_mod.sidecar_deps_installed() is False
-
-
