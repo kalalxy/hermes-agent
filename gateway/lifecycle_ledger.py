@@ -136,7 +136,7 @@ def _append_exit_diag(record: Dict[str, Any], home: Optional[Path]) -> None:
     path = base.joinpath(*_EXIT_DIAG_RELATIVE)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8-sig") as fh:
+        with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, default=str) + "\n")
     except OSError:
         logger.debug("Failed to append unclean-exit record", exc_info=True)
