@@ -35,6 +35,12 @@ PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# The managed-toolchain fixtures live in their own module so the cost
+# rationale and the CI cache key stay next to the code that pays them.
+# They are opt-in per test (request the ``managed_deps`` fixture); simply
+# loading the plugin provisions nothing.
+pytest_plugins = ["tests.managed_deps_fixture"]
+
 
 # ── Sandbox HERMES_HOME before ANY test module is imported ──────────────────
 # `hermes_cli/main.py` calls `setup_logging()` at MODULE level, which resolves
@@ -1134,6 +1140,13 @@ def pytest_configure(config):  # noqa: D401 — pytest hook
         "require_symlinks: skip the test if symbolic links cannot be "
         "created in the current environment (needs admin/developer mode "
         "on Windows).",
+    )
+    config.addinivalue_line(
+        "markers",
+        "no_managed_deps: this test asserts behaviour on an UNPROVISIONED "
+        "tree, so it must not receive the session managed toolchain. The "
+        "default is already unprovisioned; the marker documents the intent "
+        "and stops a future autouse change from silently providing tools.",
     )
     # NOTE: linux_only / macos_only / windows_only are declared in
     # pyproject.toml's ``markers`` list, not here — they are part of the

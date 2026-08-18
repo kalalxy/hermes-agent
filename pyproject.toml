@@ -443,6 +443,7 @@ markers = [
     "linux_only: exercises Linux-specific behaviour; skipped on other hosts",
     "macos_only: exercises macOS-specific behaviour; skipped on other hosts",
     "windows_only: exercises native-Windows behaviour; skipped on other hosts",
+    "no_managed_deps: asserts behaviour on an unprovisioned tree; must not get the session managed toolchain",
 ]
 # integration tests take way too long to run in the normal CI environments
 addopts = "-m 'not integration'"
