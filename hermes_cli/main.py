@@ -5139,7 +5139,6 @@ from hermes_cli.update_cmd import (  # noqa: F401
     _discard_stashed_changes,
     _ensure_acp_launcher,
     _ensure_fhs_path_guard,
-    _ensure_uv_for_termux,
     _finish_dashboard_update_cleanup,
     _for_each_systemd_gateway_unit,
     _format_concurrent_instances_message,
@@ -5148,9 +5147,7 @@ from hermes_cli.update_cmd import (  # noqa: F401
     _gateway_prompt,
     _get_origin_url,
     _has_upstream_remote,
-    _install_psutil_android_compat,
     _invalidate_update_cache,
-    _is_android_python,
     _is_fork,
     _leftover_pausable_gateway_pids,
     _log_only_write,
@@ -8011,18 +8008,15 @@ def _recover_core_update_marker_locked() -> None:
         uv_bin = ensure_uv()
         if uv_bin:
             uv_env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
-            if _is_termux_env(uv_env):
-                uv_env.pop("PYTHONPATH", None)
-                uv_env.pop("PYTHONHOME", None)
             _install_python_dependencies_with_optional_fallback(
                 [uv_bin, "pip"],
                 env=uv_env,
-                group="termux-all" if _is_termux_env(uv_env) else "all",
+                group="all",
             )
         else:
             _install_python_dependencies_with_optional_fallback(
                 [sys.executable, "-m", "pip"],
-                group="termux-all" if _is_termux_env() else "all",
+                group="all",
             )
 
         _clear_update_incomplete_marker()
@@ -8094,9 +8088,6 @@ def _default_venv_install_target() -> tuple[list[str], dict[str, str] | None]:
         uv_bin = None
     if uv_bin:
         env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
-        if _is_termux_env(env):
-            env.pop("PYTHONPATH", None)
-            env.pop("PYTHONHOME", None)
         return [uv_bin, "pip"], env
     return [sys.executable, "-m", "pip"], None
 
