@@ -52,7 +52,6 @@ echo ""
 # Derived from installation/runtime-pins.json. DO NOT EDIT BY HAND:
 # run scripts/gen-bootstrap-pins.py after a pin bump.
 UV_PIN_VERSION="0.12.3"
-GIT_PIN_VERSION="2.53.0"
 PYTHON_PIN_VERSION="3.11.15"
 
 # Sets UV_PIN_URL + UV_PIN_SHA256 for a <os>-<arch> target key.
@@ -77,33 +76,6 @@ uv_bootstrap_pin() {
         *)
             UV_PIN_URL=""
             UV_PIN_SHA256=""
-            return 1
-            ;;
-    esac
-}
-
-# Sets GIT_PIN_URL + GIT_PIN_SHA256 for a <os>-<arch> target key.
-git_bootstrap_pin() {
-    case "$1" in
-        linux-x64)
-            GIT_PIN_URL="https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-ubuntu-x64.tar.gz"
-            GIT_PIN_SHA256="cca76aa31ad9e835e771ee7f55b73934777fbd8d16757a10d307ba06de860901"
-            ;;
-        linux-arm64)
-            GIT_PIN_URL="https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-ubuntu-arm64.tar.gz"
-            GIT_PIN_SHA256="a161f45af4626bb7e0c688854bd4a9aee47cc514bca404cff0a5e3536ef1c0af"
-            ;;
-        darwin-x64)
-            GIT_PIN_URL="https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-macOS-x64.tar.gz"
-            GIT_PIN_SHA256="ae6686718aa34f4140424db16b92a47dcffd6d1f312eb8b5f3b267f7404e2680"
-            ;;
-        darwin-arm64)
-            GIT_PIN_URL="https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-macOS-arm64.tar.gz"
-            GIT_PIN_SHA256="f9dc64635a5b62fbd7ad95db73268bbb8912255ac516d65d37bf7af22fcb8ffe"
-            ;;
-        *)
-            GIT_PIN_URL=""
-            GIT_PIN_SHA256=""
             return 1
             ;;
     esac

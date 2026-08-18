@@ -48,10 +48,11 @@ def _load_uv_pin() -> dict:
 
 
 def _load_git_pin() -> dict:
-    # All six targets: install.ps1 downloads PortableGit itself, and
-    # install.sh now stages the pinned dugite-native build into the tool
-    # store instead of walking a system package-manager ladder.
-    return _load_pin("git", _POSIX_TARGETS + _WINDOWS_TARGETS)
+    # Windows targets only. install.ps1 downloads PortableGit because
+    # Windows needs git bash. macOS and Linux use the machine's git, so
+    # the pin table declares those targets as reasoned gaps and there is
+    # nothing for install.sh to stage.
+    return _load_pin("git", _WINDOWS_TARGETS)
 
 
 def _load_pin(tool: str, targets: tuple[str, ...]) -> dict:
@@ -66,13 +67,12 @@ def _load_pin(tool: str, targets: tuple[str, ...]) -> dict:
     return entry
 
 
-def _sh_fragment(uv: dict, git: dict) -> str:
+def _sh_fragment(uv: dict) -> str:
     lines = [
         BEGIN_MARK,
         "# Derived from installation/runtime-pins.json. DO NOT EDIT BY HAND:",
         "# run scripts/gen-bootstrap-pins.py after a pin bump.",
         f'UV_PIN_VERSION="{uv["version"]}"',
-        f'GIT_PIN_VERSION="{git["version"]}"',
         f'PYTHON_PIN_VERSION="{uv.get("python", "")}"',
         "",
         "# Sets UV_PIN_URL + UV_PIN_SHA256 for a <os>-<arch> target key.",
@@ -91,27 +91,6 @@ def _sh_fragment(uv: dict, git: dict) -> str:
         "        *)",
         '            UV_PIN_URL=""',
         '            UV_PIN_SHA256=""',
-        "            return 1",
-        "            ;;",
-        "    esac",
-        "}",
-        "",
-        "# Sets GIT_PIN_URL + GIT_PIN_SHA256 for a <os>-<arch> target key.",
-        "git_bootstrap_pin() {",
-        '    case "$1" in',
-    ]
-    for target in _POSIX_TARGETS:
-        entry = git["files"][target]
-        lines += [
-            f"        {target})",
-            f'            GIT_PIN_URL="{entry["url"]}"',
-            f'            GIT_PIN_SHA256="{entry["sha256"]}"',
-            "            ;;",
-        ]
-    lines += [
-        "        *)",
-        '            GIT_PIN_URL=""',
-        '            GIT_PIN_SHA256=""',
         "            return 1",
         "            ;;",
         "    esac",
@@ -185,7 +164,7 @@ def main() -> int:
     git = _load_git_pin()
     results = {
         "scripts/install.sh": _splice(
-            REPO_ROOT / "scripts" / "install.sh", _sh_fragment(uv, git), args.check
+            REPO_ROOT / "scripts" / "install.sh", _sh_fragment(uv), args.check
         ),
         "scripts/install.ps1": _splice(
             REPO_ROOT / "scripts" / "install.ps1", _ps1_fragment(uv, git), args.check
@@ -194,7 +173,7 @@ def main() -> int:
         # the same fragment. (Its git needs are covered by "you cloned
         # this repo, so you have git".)
         "setup-hermes.sh": _splice(
-            REPO_ROOT / "setup-hermes.sh", _sh_fragment(uv, git), args.check
+            REPO_ROOT / "setup-hermes.sh", _sh_fragment(uv), args.check
         ),
     }
     stale = [name for name, fresh in results.items() if not fresh]
