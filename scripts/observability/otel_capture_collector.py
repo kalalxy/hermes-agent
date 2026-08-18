@@ -28,7 +28,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
             "content_length": length,
             "body_prefix_hex": body[:24].hex(),
         }
-        with self.log_path.open("a", encoding="utf-8-sig") as fh:
+        with self.log_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, sort_keys=True) + "\n")
         self.send_response(200)
         self.end_headers()
