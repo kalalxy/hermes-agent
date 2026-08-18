@@ -827,7 +827,7 @@ def _load_ovcli_config(path: Optional[Path] = None) -> dict:
     config_path = path or _resolve_ovcli_config_path()
     if not config_path.exists():
         return {}
-    with config_path.open(encoding="utf-8") as f:
+    with config_path.open(encoding="utf-8-sig") as f:
         data = json.load(f)
     if not isinstance(data, dict):
         raise ValueError(f"OpenViking CLI config must be a JSON object: {config_path}")
@@ -1217,7 +1217,7 @@ def _env_line_safe(value: Any) -> str:
 def _write_env_vars(env_path: Path, env_writes: dict, remove_keys: tuple[str, ...] = ()) -> None:
     env_path.parent.mkdir(parents=True, exist_ok=True)
     remove_set = set(remove_keys) - set(env_writes)
-    existing_lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    existing_lines = env_path.read_text(encoding="utf-8-sig").splitlines() if env_path.exists() else []
     updated_keys = set()
     new_lines = []
     for line in existing_lines:
@@ -3220,7 +3220,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         lock_file = None
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            lock_file = path.open("a+", encoding="utf-8")
+            lock_file = path.open("a+", encoding="utf-8-sig")
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             self._run_lock_path = path
             self._run_lock_file = lock_file
@@ -3281,7 +3281,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         lock_file = None
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            lock_file = path.open("a+", encoding="utf-8")
+            lock_file = path.open("a+", encoding="utf-8-sig")
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             return True, lock_file
         except OSError as e:
@@ -3379,7 +3379,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
             sid = ""
             owner_run_id = ""
             try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
+                raw = json.loads(path.read_text(encoding="utf-8-sig"))
                 if isinstance(raw, dict):
                     sid = str(raw.get("session_id") or "").strip()
                     owner_run_id = str(raw.get("owner_run_id") or "").strip()

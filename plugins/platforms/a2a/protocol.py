@@ -807,7 +807,7 @@ def persist_message(context_id: str, role: str, text: str, task_id: str = "") ->
         d = _conv_dir()
         d.mkdir(parents=True, exist_ok=True)
         rec = {"ts": time.time(), "role": role, "text": text, "task_id": task_id}
-        with (d / f"{_safe_name(context_id)}.jsonl").open("a", encoding="utf-8") as fh:
+        with (d / f"{_safe_name(context_id)}.jsonl").open("a", encoding="utf-8-sig") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception:
         pass
@@ -820,7 +820,7 @@ def load_conversation(context_id: str, limit: int = 50) -> list[dict]:
         return []
     out: list[dict] = []
     try:
-        with path.open("r", encoding="utf-8") as fh:
+        with path.open("r", encoding="utf-8-sig") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
