@@ -1104,7 +1104,14 @@ class TestCamoufoxPin:
         pins = rr.load_pins()
         required = [t for t in rr.install_order(pins) if not rr.is_optional(t, pins)]
         assert "camoufox" not in required
-        assert {"node", "npm", "uv", "git"}.issubset(set(required))
+        # git is deliberately absent: it is optional because macOS and
+        # Linux use the machine's git rather than paying a 147MB dugite
+        # download (installation/git.py). Windows still gets the managed
+        # PortableGit, but through the optional-tool path.
+        assert {"node", "npm", "uv"}.issubset(set(required))
+        assert rr.is_optional("git", pins), (
+            "git must stay optional: POSIX installs use the system git"
+        )
 
     def test_every_target_is_pinned_including_emulated_windows_arm(self):
         """Upstream ships no win arm64 build; ARM runs the x64 one."""

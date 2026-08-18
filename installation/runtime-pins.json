@@ -77,24 +77,15 @@
     },
     "git": {
       "version": "2.53.0",
-      "$comment": "On Windows, we need git bash. On MacOS, we avoid using system git because it causes xcode commandline tools installation (big and heavy). On Linux, it's possible to not have a bundled git.",
+      "$comment": "Windows only. On Windows we need git bash, so the managed PortableGit is the contract rather than a preference. On macOS and Linux the machine's git is used when it clears the flag floor; see missingTargets.",
+      "optional": true,
+      "missingTargets": {
+        "darwin-arm64": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken.",
+        "darwin-x64": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken.",
+        "linux-x64": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken.",
+        "linux-arm64": "not bundled by choice: a 147MB dugite download to run `git rev-parse` is the wrong trade where git is one package-manager command away. installation.git.git_path() takes a system git that clears the flag floor, and reports git_install_guidance() when there is none. Windows still bundles: bash.exe ships inside PortableGit and a system git's bash can be missing or ASLR-broken."
+      },
       "files": {
-        "darwin-arm64": {
-          "url": "https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-macOS-arm64.tar.gz",
-          "sha256": "f9dc64635a5b62fbd7ad95db73268bbb8912255ac516d65d37bf7af22fcb8ffe"
-        },
-        "darwin-x64": {
-          "url": "https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-macOS-x64.tar.gz",
-          "sha256": "ae6686718aa34f4140424db16b92a47dcffd6d1f312eb8b5f3b267f7404e2680"
-        },
-        "linux-x64": {
-          "url": "https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-ubuntu-x64.tar.gz",
-          "sha256": "cca76aa31ad9e835e771ee7f55b73934777fbd8d16757a10d307ba06de860901"
-        },
-        "linux-arm64": {
-          "url": "https://github.com/desktop/dugite-native/releases/download/v2.53.0-4/dugite-native-v2.53.0-4098283-ubuntu-arm64.tar.gz",
-          "sha256": "a161f45af4626bb7e0c688854bd4a9aee47cc514bca404cff0a5e3536ef1c0af"
-        },
         "win32-x64": {
           "url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.3/PortableGit-2.53.0.3-64-bit.7z.exe",
           "sha256": "b365da794b1d2225eb24d5f5e09ef7792cfd5fa26c3a3586210280c80dff3a2a"

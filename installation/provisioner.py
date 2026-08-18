@@ -57,6 +57,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
+from installation.git import SYSTEM_GIT_FLOOR
 from installation.paths import get_install_root, resolve_bases
 from installation.tree import Sealed, runtime_tree
 from installation.registry import (
@@ -562,50 +563,22 @@ def _stage(
 #      a macOS/Linux git can never satisfy a Windows install's needs,
 #      which is already true for bash.exe reasons.
 #
-# Floor: 2.31 (rev-parse --path-format=absolute, the newest).
-SYSTEM_GIT_FLOOR = (2, 31)
-
-
-def _macos_xcode_shim(binary: str) -> bool:
-    """The /usr/bin/git stub that pops the CLT install dialog is not git."""
-    try:
-        from installation.env import is_macos_xcode_shim
-
-        return is_macos_xcode_shim(binary)
-    except Exception:  # noqa: BLE001 — a probe helper must not take the sweep down
-        return False
+# Floor: 2.31 (rev-parse --path-format=absolute, the newest). The value
+# lives in installation.git with the locator that enforces it, imported
+# at the top of this module — one number rather than two that can drift.
 
 
 def probe_system_git() -> Optional[tuple[str, str]]:
     """A usable machine-provided git: ``(absolute_path, version)`` or None.
 
-    Usable means: on PATH, not the xcode-select shim, answers
-    ``--version``, and meets ``SYSTEM_GIT_FLOOR`` so every flag this
-    codebase passes will be understood. Windows additionally requires
-    the managed git regardless (bash.exe ships with PortableGit, and a
-    winget/system git's bash may be missing or ASLR-broken), so the
-    probe is POSIX-only by design — install.ps1 owns the Windows call.
+    Delegates to :mod:`installation.git`, which owns the posture: not
+    the macOS xcode-select shim, meets the flag floor, and POSIX-only
+    because Windows always takes the managed PortableGit (bash.exe
+    ships inside it).
     """
-    if sys.platform == "win32":
-        return None
-    found = shutil.which("git")
-    if found is None or _macos_xcode_shim(found):
-        return None
-    version = _probe_version(Path(found))
-    if version is None:
-        return None
-    numbers = version.split(".")
-    try:
-        pair = (int(numbers[0]), int(numbers[1]))
-    except (ValueError, IndexError):
-        return None
-    if pair < SYSTEM_GIT_FLOOR:
-        logger.info(
-            "system git %s is below the %d.%d floor — provisioning the pinned one",
-            version, *SYSTEM_GIT_FLOOR,
-        )
-        return None
-    return found, version
+    from installation.git import probe_system_git as _probe
+
+    return _probe()
 
 
 # ─── termux: the verify-only lane (decision 5) ─────────────────────────────
