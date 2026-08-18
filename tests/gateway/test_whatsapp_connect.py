@@ -23,6 +23,28 @@ from gateway.config import Platform
 
 
 # ---------------------------------------------------------------------------
+# Managed Node
+# ---------------------------------------------------------------------------
+# The bridge spawns the MANAGED node and npm. installation.nodejs raises
+# NotProvisioned when the runtime dir has neither, and the adapter turns
+# that into a fatal error rather than reaching for a system copy of
+# unknown version. These tests are about connect() behaviour on a healthy
+# install, so they model a provisioned tree. The unprovisioned contract
+# has its own tests.
+@pytest.fixture(autouse=True)
+def _managed_node(request):
+    if "unprovisioned" in request.keywords:
+        yield
+        return
+    from installation import nodejs
+
+    with patch.object(nodejs, "node_path", return_value=Path("/managed/bin/node")), \
+         patch.object(nodejs, "npm_path", return_value=Path("/managed/bin/npm")):
+        yield
+
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

@@ -353,14 +353,19 @@ def _file_content_hash(path: Path) -> str:
 
 
 def check_whatsapp_requirements() -> bool:
+    """Report whether the WhatsApp bridge can run here.
+
+    WhatsApp needs the managed Node bridge. This is an availability
+    check that the toolset registry calls to decide what to show the
+    user, so an unprovisioned tree answers False. The spawn path fails
+    loud instead, because by then the user asked for WhatsApp.
     """
-    Check if WhatsApp dependencies are available.
-    
-    WhatsApp requires a Node.js bridge for most implementations.
-    """
-    # Prefer Hermes-managed Node/npm so Windows installs are not broken by a
+    # Use the Hermes-managed Node so Windows installs are not broken by a
     # bad or elevation-triggering system Node on PATH.
-    _node = str(nodejs.node_path())
+    try:
+        _node = str(nodejs.node_path())
+    except nodejs.NotProvisioned:
+        return False
     if not _node:
         return False
     try:
@@ -580,9 +585,23 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                     _deps_fresh = False
             if not _deps_fresh:
                 print(f"[{self.name}] Installing WhatsApp bridge dependencies...")
-                # Resolve npm path so Windows uses npm.cmd from the
-                # Hermes-managed portable Node before falling back to PATH.
-                _npm_bin = str(nodejs.npm_path())
+                # Resolve npm from the Hermes-managed portable Node so
+                # Windows uses npm.cmd. An unprovisioned tree is a fatal
+                # error for a bridge the user explicitly enabled: there is
+                # no system npm of known version to fall back to.
+                try:
+                    _npm_bin = str(nodejs.npm_path())
+                except nodejs.NotProvisioned as exc:
+                    print(f"[{self.name}] {exc}")
+                    self._set_fatal_error(
+                        "whatsapp_npm_install_failed",
+                        f"WhatsApp bridge needs the managed npm, which this "
+                        f"install does not have ({exc}). Run "
+                        f"`python -m installation.provisioner`, then restart "
+                        f"`hermes gateway`.",
+                        retryable=False,
+                    )
+                    return False
                 try:
                     # Read timeout from environment variable, default to 300 seconds (5 minutes)
                     # to accommodate slower systems like Unraid NAS
@@ -729,9 +748,24 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             bridge_env["HERMES_AUDIO_CACHE_DIR"] = str(_get_audio_dir())
             bridge_env["HERMES_DOCUMENT_CACHE_DIR"] = str(_get_doc_dir())
 
+            try:
+                _node_bin = str(nodejs.node_path())
+            except nodejs.NotProvisioned as exc:
+                print(f"[{self.name}] {exc}")
+                self._close_bridge_log()
+                self._set_fatal_error(
+                    "whatsapp_node_not_provisioned",
+                    f"WhatsApp bridge needs the managed Node, which this "
+                    f"install does not have ({exc}). Run "
+                    f"`python -m installation.provisioner`, then restart "
+                    f"`hermes gateway`.",
+                    retryable=False,
+                )
+                return False
+
             self._bridge_process = subprocess.Popen(
                 [
-                    str(nodejs.node_path()),
+                    _node_bin,
                     str(bridge_path),
                     "--port", str(self._bridge_port),
                     "--session", str(self._session_path),

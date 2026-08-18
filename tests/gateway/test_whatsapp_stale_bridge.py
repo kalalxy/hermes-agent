@@ -25,6 +25,24 @@ import pytest
 from gateway.config import Platform
 
 
+# ---------------------------------------------------------------------------
+# Managed Node
+# ---------------------------------------------------------------------------
+# The bridge spawns the MANAGED node and npm. installation.nodejs raises
+# NotProvisioned when the runtime dir has neither, and the adapter turns
+# that into a fatal error rather than reaching for a system copy of
+# unknown version. These tests are about connect() behaviour on a healthy
+# install, so they model a provisioned tree.
+@pytest.fixture(autouse=True)
+def _managed_node():
+    from installation import nodejs
+
+    with patch.object(nodejs, "node_path", return_value=Path("/managed/bin/node")), \
+         patch.object(nodejs, "npm_path", return_value=Path("/managed/bin/npm")):
+        yield
+
+
+
 class _AsyncCM:
     """Minimal async context manager returning a fixed value."""
 
