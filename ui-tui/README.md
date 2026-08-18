@@ -16,7 +16,7 @@ The client entrypoint is `src/entry.tsx`. It exits early if `stdin` is not a TTY
 python -m tui_gateway.entry
 ```
 
-Interpreter resolution order is: `HERMES_PYTHON` → `PYTHON` → `$VIRTUAL_ENV/bin/python` → `./.venv/bin/python` → `./venv/bin/python` → `python3` (or `python` on Windows).
+Interpreter resolution: `HERMES_PYTHON`, which the launcher always sets (`hermes_cli/main.py::_apply_tui_python_env`, and the Nix wrapper). A bare `npm run dev` / `npm start` from this directory has no launcher above it and falls back to `python3` (`python` on Windows) from your activated environment.
 
 The transport is newline-delimited JSON-RPC over stdio:
 
