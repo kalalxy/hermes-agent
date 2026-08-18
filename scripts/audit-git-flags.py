@@ -48,7 +48,7 @@ for package in PACKAGES:
         if "__pycache__" in str(path):
             continue
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"))
         except SyntaxError:
             continue
         for node in ast.walk(tree):

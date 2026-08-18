@@ -55,7 +55,7 @@ def _load_git_pin() -> dict:
 
 
 def _load_pin(tool: str, targets: tuple[str, ...]) -> dict:
-    data = json.loads(PINS_PATH.read_text(encoding="utf-8"))
+    data = json.loads(PINS_PATH.read_text(encoding="utf-8-sig"))
     entry = data["tools"][tool]
     for target in targets:
         spec = entry["files"][target]  # KeyError on a missing target is the point
@@ -161,7 +161,7 @@ def _ps1_fragment(uv: dict, git: dict) -> str:
 
 def _splice(path: Path, fragment: str, check: bool) -> bool:
     """Replace the marked block in *path*. Returns True when up to date."""
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     begin = text.index(BEGIN_MARK)  # ValueError on missing marker is the point
     end = text.index(END_MARK) + len(END_MARK)
     updated = text[:begin] + fragment + text[end:]

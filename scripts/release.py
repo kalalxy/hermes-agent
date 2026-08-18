@@ -2098,7 +2098,7 @@ def _load_contributor_dir(directory: "Path | None" = None) -> dict:
         if not path.is_file() or path.name.startswith("."):
             continue
         try:
-            for line in path.read_text(encoding="utf-8").splitlines():
+            for line in path.read_text(encoding="utf-8-sig").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
                     mapping[path.name] = line.lstrip("@")
@@ -2240,7 +2240,7 @@ def nightly_tag_for_date(stable_tag: "str | None", date_utc: str) -> str:
 
 def get_current_version():
     """Read current semver from __init__.py."""
-    content = VERSION_FILE.read_text(encoding="utf-8")
+    content = VERSION_FILE.read_text(encoding="utf-8-sig")
     match = re.search(r'__version__\s*=\s*"([^"]+)"', content)
     return match.group(1) if match else "0.0.0"
 
@@ -2270,7 +2270,7 @@ def bump_version(current: str, part: str) -> str:
 def update_version_files(semver: str, calver_date: str) -> list[str]:
     """Update version strings in source files. returns a list of updates files."""
     # Update __init__.py
-    content = VERSION_FILE.read_text(encoding="utf-8")
+    content = VERSION_FILE.read_text(encoding="utf-8-sig")
     content = re.sub(
         r'__version__\s*=\s*"[^"]+"',
         f'__version__ = "{semver}"',
@@ -2293,7 +2293,7 @@ def update_version_files(semver: str, calver_date: str) -> list[str]:
     VERSION_FILE.write_text(content, encoding="utf-8")
 
     # Update pyproject.toml
-    pyproject = PYPROJECT_FILE.read_text(encoding="utf-8")
+    pyproject = PYPROJECT_FILE.read_text(encoding="utf-8-sig")
     pyproject = re.sub(
         r'^version\s*=\s*"[^"]+"',
         f'version = "{semver}"',
@@ -2306,7 +2306,7 @@ def update_version_files(semver: str, calver_date: str) -> list[str]:
     # Python package version. The desktop About panel reads the live Hermes
     # version at runtime, but app.getVersion()/packaging metadata still come
     # from this field, so it must track pyproject to avoid drift.
-    pkg_text = DESKTOP_PKG_FILE.read_text(encoding="utf-8")
+    pkg_text = DESKTOP_PKG_FILE.read_text(encoding="utf-8-sig")
     pkg_text = re.sub(
         r'("version"\s*:\s*)"[^"]+"',
         rf'\g<1>"{semver}"',
@@ -2318,7 +2318,7 @@ def update_version_files(semver: str, calver_date: str) -> list[str]:
     # npm mirrors each workspace package's version into the root lockfile.
     # Update the apps/desktop entry so `npm ci`/`npm install` do not see the
     # lockfile as out of date and rewrite it (or fail in CI) after a bump.
-    lock_text = PKG_LOCK_FILE.read_text(encoding="utf-8")
+    lock_text = PKG_LOCK_FILE.read_text(encoding="utf-8-sig")
     lock_text = re.sub(
         r'("apps/desktop"\s*:\s*\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"version"\s*:\s*)"[^"]+"',
         rf'\g<1>"{semver}"',
@@ -2329,7 +2329,7 @@ def update_version_files(semver: str, calver_date: str) -> list[str]:
 
     # uv.lock records the editable root package's version from pyproject.
     # Update it in place so a post-release `uv sync`/`uv lock` is a no-op.
-    uv_text = UV_LOCK_FILE.read_text(encoding="utf-8")
+    uv_text = UV_LOCK_FILE.read_text(encoding="utf-8-sig")
     uv_text = re.sub(
         r'(name = "hermes-agent"\nversion = )"[^"]+"',
         rf'\g<1>"{semver}"',

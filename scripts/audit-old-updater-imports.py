@@ -590,7 +590,7 @@ def resolve_in_tree(module: str, symbol: str | None, root: Path) -> tuple[bool, 
         return True, ""
 
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"))
     except (OSError, SyntaxError) as exc:
         return False, f"{module}: unreadable ({exc})"
 

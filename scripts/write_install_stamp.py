@@ -67,7 +67,7 @@ def _run_git(*args: str, cwd: str | Path = _REPO_ROOT) -> str | None:
 def _parse_release_metadata() -> tuple[str | None, str | None]:
     """Read __version__ and __release_date__ from hermes_cli/__init__.py."""
     try:
-        text = (_REPO_ROOT / "hermes_cli" / "__init__.py").read_text(encoding="utf-8")
+        text = (_REPO_ROOT / "hermes_cli" / "__init__.py").read_text(encoding="utf-8-sig")
     except OSError:
         return None, None
     version = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', text)
