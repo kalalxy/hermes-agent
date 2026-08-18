@@ -2775,7 +2775,7 @@ def _ensure_fhs_path_guard() -> None:
         if already_guarded:
             continue
         try:
-            with cfg.open("a", encoding="utf-8-sig") as f:
+            with cfg.open("a", encoding="utf-8") as f:
                 f.write("\n" + path_comment + "\n" + path_line + "\n")
         except OSError as e:
             print(f"  ⚠ Could not update {cfg}: {e}")

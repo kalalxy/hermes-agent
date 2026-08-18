@@ -274,6 +274,6 @@ def append_manifest_entry(output_dir: Path | str, session: dict[str, Any], path:
         "exported_at": time.time(),
     }
     manifest = out_dir / "manifest.jsonl"
-    with manifest.open("a", encoding="utf-8-sig") as fh:
+    with manifest.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
     return manifest
