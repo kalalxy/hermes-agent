@@ -1,0 +1,189 @@
+name: Bootstrap Installer
+
+# Builds Hermes Setup — the Tauri GUI front end of scripts/install.ps1 —
+# for Windows x64 + arm64, version-stamped with the release tag (kills
+# the 0.0.1 placeholder artifacts), signed through the same Azure
+# Trusted Signing workload identity as the desktop app, and attached to
+# the same release.
+#
+# Runs on every stable release tag push, plus workflow_dispatch /
+# workflow_call for dry runs. Stable-only (no nightly Setup: the tag
+# gate below rejects nightly shapes on purpose — Setup installs from
+# main and carries no payload, so a dated variant would be noise).
+# Windows only for now: mac/linux users get the shell one-liner; Setup
+# exists because PowerShell one-liners are a hard sell on Windows.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build Setup for (vX.Y.Z). Must exist on the repo.'
+        required: true
+        type: string
+      upload_release:
+        description: 'Attach artifacts to the GitHub release for the tag'
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      upload_release:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # release asset upload
+  id-token: write # OIDC federated login to Azure (signing)
+
+concurrency:
+  group: bootstrap-installer-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Hermes Setup ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    # Same protected environment as the desktop matrix: its deployment
+    # policy (main + v* tags) decides which refs reach the signing
+    # variables; forks/dry-runs resolve them blank and build unsigned.
+    environment: release-signing
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: win32-x64
+            runner: windows-2025
+            rust-target: x86_64-pc-windows-msvc
+          - label: win32-arm64
+            runner: windows-11-arm
+            rust-target: aarch64-pc-windows-msvc
+    env:
+      HERMES_SETUP_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Validate tag shape
+        shell: bash
+        run: |
+          case "$HERMES_SETUP_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) echo "tag: $HERMES_SETUP_TAG" ;;
+            *) echo "::error::'$HERMES_SETUP_TAG' is not a release tag (vX.Y.Z)"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.HERMES_SETUP_TAG }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable branch, 2026-08 head
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust-target }}
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/bootstrap-installer/src-tauri/target
+          key: setup-cargo-${{ matrix.label }}-${{ hashFiles('apps/bootstrap-installer/src-tauri/Cargo.lock') }}
+
+      # ── Azure OIDC login (same federation as the desktop matrix) ──────
+      - name: Azure login (OIDC)
+        if: vars.AZURE_CLIENT_ID != ''
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      # Tauri signs through signCommand → scripts/tauri-sign.ps1 →
+      # Invoke-TrustedSigning, which authenticates with
+      # WorkloadIdentityCredential: AZURE_CLIENT_ID/TENANT_ID plus the
+      # token file below. Tauri builds are minutes, not the desktop's
+      # hour, but signing happens at the END (app exe, then the NSIS
+      # installer) — the remint loop keeps the token fresh past the
+      # 10-minute OIDC lifetime either way. Same mechanism as the
+      # desktop workflow's dlib.
+      - name: Mint federated token for signing
+        if: vars.AZURE_CLIENT_ID != ''
+        shell: bash
+        run: |
+          file="$RUNNER_TEMP/azure-federated-token"
+          mint() {
+            curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" \
+              | jq -r .value > "$file.tmp" && mv -f "$file.tmp" "$file"
+          }
+          mint
+          ( while sleep 240; do mint || true; done ) &
+          echo "AZURE_FEDERATED_TOKEN_FILE=$file" >> "$GITHUB_ENV"
+
+      - name: Stamp the release version
+        shell: bash
+        run: node scripts/stamp-bootstrap-installer-version.mjs --version="$HERMES_SETUP_TAG"
+
+      # The root npm ci covers the workspace (bootstrap-installer is an
+      # apps/* workspace; its deps hoist into the root node_modules).
+      - name: Install JS dependencies
+        shell: bash
+        env:
+          CI: 'true'
+        run: npm ci --no-audit --no-fund
+
+      - name: Build Hermes Setup
+        shell: bash
+        env:
+          AZURE_SIGN_ENDPOINT: ${{ vars.AZURE_SIGN_ENDPOINT }}
+          AZURE_SIGN_ACCOUNT: ${{ vars.AZURE_SIGN_ACCOUNT }}
+          AZURE_SIGN_PROFILE: ${{ vars.AZURE_SIGN_PROFILE }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        run: |
+          npm run tauri:build --workspace apps/bootstrap-installer -- \
+            --target ${{ matrix.rust-target }}
+
+      - name: Collect artifact
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          version="${HERMES_SETUP_TAG#v}"
+          arch="${{ matrix.label }}"; arch="${arch#win32-}"
+          out="apps/bootstrap-installer/src-tauri/target/${{ matrix.rust-target }}/release/bundle/nsis"
+          exes=("$out"/*.exe)
+          if [ ${#exes[@]} -ne 1 ]; then
+            echo "::error::expected exactly one NSIS exe in $out, found ${#exes[@]}"; exit 1
+          fi
+          mkdir -p setup-dist
+          cp "${exes[0]}" "setup-dist/Hermes-Setup-${version}-win-${arch}.exe"
+          ls -l setup-dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hermes-setup-${{ matrix.label }}-${{ env.HERMES_SETUP_TAG }}
+          path: setup-dist/*.exe
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload to GitHub release
+        if: github.event_name == 'push' || inputs.upload_release == true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$HERMES_SETUP_TAG" >/dev/null 2>&1; then
+            gh release upload "$HERMES_SETUP_TAG" setup-dist/*.exe --clobber
+          fi

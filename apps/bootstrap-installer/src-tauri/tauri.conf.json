@@ -41,7 +41,8 @@
     "targets": [
       "app",
       "dmg",
-      "appimage"
+      "appimage",
+      "nsis"
     ],
     "icon": [
       "icons/32x32.png",
@@ -53,7 +54,8 @@
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"
-      }
+      },
+      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tauri-sign.ps1 %1"
     },
     "macOS": {
       "minimumSystemVersion": "11.0",
