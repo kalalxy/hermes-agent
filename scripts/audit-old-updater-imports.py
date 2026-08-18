@@ -105,7 +105,6 @@ UPDATE_ENTRYPOINTS = (
     "_cmd_update_impl",
     "_update_via_zip",
     "_run_update_phase_inline",
-    "cmd_update_eject",
 )
 
 _AnyFunc = ast.FunctionDef | ast.AsyncFunctionDef
