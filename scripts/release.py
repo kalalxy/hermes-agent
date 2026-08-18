@@ -2504,6 +2504,12 @@ def generate_changelog(commits, tag_name, semver, repo_url="https://github.com/N
     lines.append("")
     lines.append(f"**Release Date:** {date_str}")
     lines.append("")
+    # The builds-table job in desktop-bundled-release.yml replaces this
+    # marker with the download tables once every matrix leg has uploaded
+    # its artifacts (real asset names, never predicted ones). A release
+    # whose matrix never finishes keeps the marker — visibly unfinished.
+    lines.append("<!-- HERMES_BUILDS_TABLE -->")
+    lines.append("")
 
     if first_release:
         lines.append("> 🎉 **First official release!** This marks the beginning of regular weekly releases")

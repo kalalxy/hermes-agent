@@ -458,3 +458,30 @@ jobs:
           if gh release view "$HERMES_PAYLOAD_TAG" >/dev/null 2>&1; then
             gh release upload "$HERMES_PAYLOAD_TAG" "${files[@]}" --clobber
           fi
+
+  # ── Builds table ─────────────────────────────────────────────────────
+  # After EVERY matrix leg has uploaded, render the download tables into
+  # the release body's <!-- HERMES_BUILDS_TABLE --> marker from the
+  # release's actual asset names (never predicted ones — a missing
+  # artifact is a missing row, not a dead link). msix and mac .zip stay
+  # out of the tables by design (store channel / updater delta target);
+  # their legs still gate this job through needs:. Draft stable releases
+  # and published nightly prereleases both work: gh resolves drafts too.
+  builds-table:
+    name: Render the release builds table
+    needs: build
+    if: github.event_name == 'push' || inputs.upload_release == true
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Render
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HERMES_PAYLOAD_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$HERMES_PAYLOAD_TAG" >/dev/null 2>&1; then
+            python3 scripts/render-builds-table.py \
+              --tag "$HERMES_PAYLOAD_TAG" --repo "$GITHUB_REPOSITORY"
+          else
+            echo "no release for $HERMES_PAYLOAD_TAG — nothing to render"
+          fi
