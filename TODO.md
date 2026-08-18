@@ -26,20 +26,38 @@ either. Both fail on Linux today:
 | `tests/test_windows_subprocess_no_window_flags.py::test_lazy_deps_uv_install_hides_console_window` | The lazy-deps uv install path does not pass the no-window flags the test expects. |
 | `tests/agent/lsp/test_install_and_lint_fixes.py::test_install_npm_works_without_extras` | An LSP install path that expects npm to work without extras. |
 
-**3. `audit-old-updater-imports.py --check` exits 1.** Four names the
-frozen surface expects are not found:
-`hermes_cli.gateway.GATEWAY_LOOP_WEDGED`,
-`hermes_cli.gateway._escalate_wedged_gateway`,
-`hermes_cli.gateway.probe_gateway_loop_liveness`, and
-`hermes_constants.DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT`, all reached
-from `hermes_cli/update_cmd.py:_cmd_update_impl`.
+**3. `audit-old-updater-imports.py --check` exits 1 until the rebase.
+RESOLVED BY THE REBASE, verified.** One name is fatal, and it is not a
+rename to chase: the whole module `hermes_cli.gitlock` is absent, and
+eleven shipped revisions of `update_cmd.py:_cmd_update_impl` import
+`clear_stale_git_locks` from it.
 
-Pre-existing, and proven so causally rather than by inspection: a
-throwaway worktree at `ceb55cbbb`, the commit before any of the
-documentation work, fails with the same four names. Either the frozen
-set in `tests/compat/old_updater_surface.json` needs regenerating, or
-those four names were renamed without updating it. The audit is a
-release gate, so resolve it before the branch ships.
+The cause is branch age, not a deletion. `hermes_cli/gitlock.py` arrived
+on main in `7fe3bf042`, which lands AFTER this branch's merge-base
+`b6726d57e`. This branch never had the file and never removed it, and
+main is 1285 commits ahead. The rebase brings the file with it.
+
+Verified by construction rather than by argument: copying main's
+`hermes_cli/gitlock.py` into this tree and re-running `--check` exits 0.
+The file was removed again immediately, and it must NOT be committed
+here. Main already has that exact file, so adding it would be an
+add/add conflict against an identical copy during the rebase.
+
+The four `hermes_cli.gateway` and `hermes_constants` names are
+`guarded_only`: they load solely inside a swallowing `try`, so a missing
+one degrades a fallback arm rather than the update, and `--check` does
+not fail on them. They are also absent at the merge-base, and the
+enforcing test `tests/test_old_updater_compat_surface.py` only resolves
+the `bare` list, which is why it passes at 27 green while `--check`
+exits 1.
+
+Re-run `--check` immediately after the rebase. It must exit 0 there. If
+it does not, the surface genuinely regressed and the message names what
+is gone.
+
+An earlier revision of this item listed those four guarded names as the
+failure and did not name `gitlock` at all. That reading came from the
+tail of the output rather than from the exit-code logic.
 
 **4. lazy_deps: five pre-existing failures.** Verify whether
 `ae2db7da2` ("read the lazy-install specs from the pyproject extras")
@@ -157,11 +175,27 @@ structurally rather than textually.
 
 ## Rebase
 
-**17. The P11 fixup target is unresolved.** The cleanup plan named
-`95f91f2f7` and `6180ab993` as fixup targets for the pins-schema work.
-Neither can take it: at `95f91f2f7` the schema sits at the repo root and
-the registry is `hermes_cli/runtime_registry.py`, and neither
-`nix/runtime-pins.nix` nor the doc page exists yet. The earliest commit
-where every touched path exists in its current place is `5d04d0d5e`, the
-rename itself. The change landed as its own commit, and its message
-carries the same note. Resolve during the rebase.
+**17. The P11 fixup target: RESOLVED, and one conflict to expect.** The
+pins-schema work is now `fixup! fixup! feat(runtime): uv, node, npm,
+ripgrep, git, and gh become managed tools`, so autosquash slots it after
+`135523272` and after the existing `06497b0b4`.
+
+Two earlier guesses were wrong, and a dry run is what corrected both.
+The cleanup plan named `95f91f2f7` and `6180ab993`; at `95f91f2f7` the
+schema sits at the repo root and the registry is
+`hermes_cli/runtime_registry.py`. This file then proposed `5d04d0d5e`,
+the rename, on the reasoning that it is the earliest commit where every
+touched path exists in place. That is true and still insufficient: at
+`5d04d0d5e` the git entry has no `missingTargets` yet, so the fixup
+tried to convert a key that is not there and conflicted on
+`installation/runtime-pins.json`. `06497b0b4` is the commit that gives
+git its `missingTargets`, so the union conversion belongs after it.
+
+EXPECT ONE CONFLICT during the phase 14 autosquash, and it is not from
+this work: `06497b0b4` modifies `installation/provisioner.py` while a
+later commit in the series moves that file, so git reports
+modify/delete on `installation/provisioner.py` and
+`tests/hermes_cli/test_runtime_provisioner.py`. Proven pre-existing
+causally: dropping the pins fixup entirely, in a throwaway worktree, and
+re-running the same autosquash produces the identical two conflicts.
+Resolve by keeping the moved file's content.
