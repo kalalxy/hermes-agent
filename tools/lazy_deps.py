@@ -197,7 +197,7 @@ def _pyproject() -> dict:
     if root is None:
         return {}
     try:
-        return tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        return tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8-sig"))
     except Exception as e:
         logger.debug("Could not read pyproject.toml: %s", e)
         return {}
@@ -480,7 +480,7 @@ def _ensure_target_ready(target: Path) -> Optional[str]:
         if target.exists():
             have = ""
             try:
-                have = stamp.read_text(encoding="utf-8").strip()
+                have = stamp.read_text(encoding="utf-8-sig").strip()
             except (OSError, FileNotFoundError):
                 have = ""
             if have and have != want:
@@ -1484,7 +1484,7 @@ def _read_feature_record() -> set[str]:
     file heals on the next write instead of raising forever.
     """
     try:
-        raw = json.loads(_feature_record_path().read_text(encoding="utf-8"))
+        raw = json.loads(_feature_record_path().read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return set()
     if not isinstance(raw, list):

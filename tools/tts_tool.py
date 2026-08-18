@@ -1562,7 +1562,7 @@ def _concat_audio_files(
         f".{destination.stem}.{uuid.uuid4().hex}.combining{destination.suffix}"
     )
     try:
-        with concat_path.open("w", encoding="utf-8") as concat_file:
+        with concat_path.open("w", encoding="utf-8-sig") as concat_file:
             for path in audio_paths:
                 concat_file.write(f"file {shlex.quote(os.path.abspath(path))}\n")
 
@@ -2462,7 +2462,7 @@ def _read_gemini_persona_prompt(gemini_config: Dict[str, Any]) -> str:
     if path is None:
         return ""
     try:
-        return path.read_text(encoding="utf-8").strip()
+        return path.read_text(encoding="utf-8-sig").strip()
     except (OSError, UnicodeDecodeError) as exc:
         logger.warning(
             "Gemini TTS persona prompt file unavailable at %s: %s",

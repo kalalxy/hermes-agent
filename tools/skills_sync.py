@@ -121,7 +121,7 @@ def _read_manifest() -> Dict[str, str]:
         return {}
     try:
         result = {}
-        for line in MANIFEST_FILE.read_text(encoding="utf-8").splitlines():
+        for line in MANIFEST_FILE.read_text(encoding="utf-8-sig").splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -154,7 +154,7 @@ def _read_suppressed_names() -> set:
             return set()
         names = set()
         try:
-            for line in path.read_text(encoding="utf-8").splitlines():
+            for line in path.read_text(encoding="utf-8-sig").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
                     names.add(line)
@@ -199,7 +199,7 @@ def _write_manifest(entries: Dict[str, str]):
 def _read_skill_name(skill_md: Path, fallback: str) -> str:
     """Read the name field from SKILL.md YAML frontmatter, falling back to *fallback*."""
     try:
-        content = skill_md.read_text(encoding="utf-8", errors="replace")[:4000]
+        content = skill_md.read_text(encoding="utf-8-sig", errors="replace")[:4000]
     except OSError:
         return fallback
     in_frontmatter = False
@@ -467,7 +467,7 @@ def _backfill_optional_provenance(quiet: bool = False) -> List[str]:
 
     lock_path = SKILLS_DIR / ".hub" / "lock.json"
     try:
-        data = json.loads(lock_path.read_text(encoding="utf-8")) if lock_path.exists() else {"version": 1, "installed": {}}
+        data = json.loads(lock_path.read_text(encoding="utf-8-sig")) if lock_path.exists() else {"version": 1, "installed": {}}
     except (json.JSONDecodeError, OSError):
         data = {"version": 1, "installed": {}}
     installed = data.setdefault("installed", {})
@@ -576,7 +576,7 @@ def _read_hub_install_paths() -> Set[str]:
     if not lock_path.exists():
         return set()
     try:
-        data = json.loads(lock_path.read_text(encoding="utf-8"))
+        data = json.loads(lock_path.read_text(encoding="utf-8-sig"))
     except (json.JSONDecodeError, OSError):
         return set()
     paths: Set[str] = set()
