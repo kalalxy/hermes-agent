@@ -685,7 +685,7 @@ def test_is_termux_env_true_for_termux_prefix():
     assert hm._is_termux_env({"PREFIX": "/data/data/com.termux/files/usr"}) is True
 
 
-def test_load_installable_optional_extras_supports_termux_group(tmp_path, monkeypatch):
+def test_load_installable_optional_extras_supports_named_group(tmp_path, monkeypatch):
     from hermes_cli import main as hm
 
     pyproject = tmp_path / "pyproject.toml"
@@ -697,15 +697,15 @@ version = "0.0.0"
 
 [project.optional-dependencies]
 all = ["x[mcp]"]
-termux-all = ["x[termux]", "x[mcp]"]
+slim = ["x[base]", "x[mcp]"]
 mcp = ["mcp>=1"]
-termux = ["rich>=14"]
+base = ["rich>=14"]
 """.strip()
     )
     monkeypatch.setattr(hm, "PROJECT_ROOT", tmp_path)
 
     assert hm._load_installable_optional_extras(group="all") == ["mcp"]
-    assert hm._load_installable_optional_extras(group="termux-all") == ["termux", "mcp"]
+    assert hm._load_installable_optional_extras(group="slim") == ["base", "mcp"]
 
 
 class TestNodeRuntimeNpmResolution:

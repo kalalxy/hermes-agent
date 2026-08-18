@@ -6,7 +6,7 @@
 #
 # This used to be a fourth, parallel implementation of "install Hermes":
 # its own uv installer (astral-latest via curl|sh — unpinned, unverified),
-# its own dependency tiers, its own Termux handling. It is now a WRAPPER
+# its own dependency tiers. It is now a WRAPPER
 # over the same engine every other install path uses:
 #
 #   1. pinned uv into the machine-wide tool store  (generated fragment
@@ -16,7 +16,7 @@
 #   4. user state         via  python -m hermes_cli.post_update
 #
 # The only logic that lives HERE is what is unique to a dev checkout:
-# where to symlink the CLI, and the Termux stdlib-venv lane.
+# where to symlink the CLI.
 #
 # Usage:
 #   ./setup-hermes.sh
@@ -36,16 +36,8 @@ cd "$SCRIPT_DIR"
 # wrong user's home directory when running under sudo -u <user>.  See #21269.
 export UV_NO_CONFIG=1
 
-is_termux() {
-    [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]
-}
-
 get_command_link_dir() {
-    if is_termux && [ -n "${PREFIX:-}" ]; then
-        echo "$PREFIX/bin"
-    else
-        echo "$HOME/.local/bin"
-    fi
+    echo "$HOME/.local/bin"
 }
 
 log_info()    { echo -e "${CYAN}→${NC} $*"; }
@@ -134,94 +126,77 @@ uv_bootstrap_target() {
     echo "$_os-$_arch"
 }
 
-# ============================================================================
-# Termux lane: stdlib venv + pip (no uv build for Android; decision 5)
-# ============================================================================
-if is_termux; then
-    log_info "Termux detected — stdlib venv + pip lane"
-    command -v python >/dev/null 2>&1 || { log_info "Installing Python via pkg..."; pkg install -y python >/dev/null; }
-    if [ ! -d venv ]; then
-        python -m venv venv
-        log_success "venv created (stdlib)"
+# ========================================================================
+# Pinned uv into the tool store — the SAME artifact every installer uses.
+# No astral-latest, no curl|sh: URL + sha256 come from the generated
+# fragment above, which derives from installation/runtime-pins.json.
+# ========================================================================
+_target="$(uv_bootstrap_target)" || { log_error "Unsupported platform"; exit 1; }
+uv_bootstrap_pin "$_target" || { log_error "No uv pin for $_target"; exit 1; }
+
+_home_root="${HERMES_HOME:-$HOME/.hermes}"
+case "$_home_root" in
+    */profiles/*) _home_root="${_home_root%/profiles/*}" ;;
+esac
+_store="$_home_root/tools"
+_entry="$_store/uv-$UV_PIN_VERSION-$_target"
+UV_CMD="$_entry/uv"
+
+if [ ! -x "$UV_CMD" ]; then
+    log_info "Staging pinned uv $UV_PIN_VERSION into the tool store..."
+    _tmp="$(mktemp -d)"
+    curl -LsSf "$UV_PIN_URL" -o "$_tmp/uv.tar.gz"
+    if command -v sha256sum >/dev/null 2>&1; then
+        _digest="$(sha256sum "$_tmp/uv.tar.gz" | cut -d' ' -f1)"
+    else
+        _digest="$(shasum -a 256 "$_tmp/uv.tar.gz" | cut -d' ' -f1)"
     fi
-    # shellcheck disable=SC1091
-    . venv/bin/activate
-    pip install --upgrade pip >/dev/null
-    pip install -e ".[termux]" -c constraints-termux.txt
-    log_success "Dependencies installed (.[termux], constrained)"
-else
-    # ========================================================================
-    # Pinned uv into the tool store — the SAME artifact every installer uses.
-    # No astral-latest, no curl|sh: URL + sha256 come from the generated
-    # fragment above, which derives from installation/runtime-pins.json.
-    # ========================================================================
-    _target="$(uv_bootstrap_target)" || { log_error "Unsupported platform"; exit 1; }
-    uv_bootstrap_pin "$_target" || { log_error "No uv pin for $_target"; exit 1; }
-
-    _home_root="${HERMES_HOME:-$HOME/.hermes}"
-    case "$_home_root" in
-        */profiles/*) _home_root="${_home_root%/profiles/*}" ;;
-    esac
-    _store="$_home_root/tools"
-    _entry="$_store/uv-$UV_PIN_VERSION-$_target"
-    UV_CMD="$_entry/uv"
-
-    if [ ! -x "$UV_CMD" ]; then
-        log_info "Staging pinned uv $UV_PIN_VERSION into the tool store..."
-        _tmp="$(mktemp -d)"
-        curl -LsSf "$UV_PIN_URL" -o "$_tmp/uv.tar.gz"
-        if command -v sha256sum >/dev/null 2>&1; then
-            _digest="$(sha256sum "$_tmp/uv.tar.gz" | cut -d' ' -f1)"
-        else
-            _digest="$(shasum -a 256 "$_tmp/uv.tar.gz" | cut -d' ' -f1)"
-        fi
-        if [ "$_digest" != "$UV_PIN_SHA256" ]; then
-            log_error "uv digest mismatch (expected $UV_PIN_SHA256, got $_digest)"
-            rm -rf "$_tmp"; exit 1
-        fi
-        mkdir -p "$_store"
-        _staging="$_store/.staging-$$-$(date +%s)"
-        mkdir -p "$_staging"
-        tar -xzf "$_tmp/uv.tar.gz" -C "$_tmp"
-        _unpacked="$(find "$_tmp" -mindepth 1 -maxdepth 2 -name uv -type f | head -n1)"
-        [ -n "$_unpacked" ] || { log_error "uv missing from archive"; rm -rf "$_tmp" "$_staging"; exit 1; }
-        mv "$_unpacked" "$_staging/uv"
-        [ -f "$(dirname "$_unpacked")/uvx" ] && mv "$(dirname "$_unpacked")/uvx" "$_staging/uvx"
-        chmod +x "$_staging/uv" "$_staging/uvx" 2>/dev/null || true
-        cat > "$_staging/.hermes-store-entry.json" <<MARKER
+    if [ "$_digest" != "$UV_PIN_SHA256" ]; then
+        log_error "uv digest mismatch (expected $UV_PIN_SHA256, got $_digest)"
+        rm -rf "$_tmp"; exit 1
+    fi
+    mkdir -p "$_store"
+    _staging="$_store/.staging-$$-$(date +%s)"
+    mkdir -p "$_staging"
+    tar -xzf "$_tmp/uv.tar.gz" -C "$_tmp"
+    _unpacked="$(find "$_tmp" -mindepth 1 -maxdepth 2 -name uv -type f | head -n1)"
+    [ -n "$_unpacked" ] || { log_error "uv missing from archive"; rm -rf "$_tmp" "$_staging"; exit 1; }
+    mv "$_unpacked" "$_staging/uv"
+    [ -f "$(dirname "$_unpacked")/uvx" ] && mv "$(dirname "$_unpacked")/uvx" "$_staging/uvx"
+    chmod +x "$_staging/uv" "$_staging/uvx" 2>/dev/null || true
+    cat > "$_staging/.hermes-store-entry.json" <<MARKER
 {"tool": "uv", "version": "$UV_PIN_VERSION", "target": "$_target", "sha256": "$UV_PIN_SHA256", "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"}
 MARKER
-        rm -rf "$_tmp"
-        if ! mv "$_staging" "$_entry" 2>/dev/null; then
-            rm -rf "$_staging"
-            [ -x "$UV_CMD" ] || { log_error "uv publish race lost and no winner found"; exit 1; }
-        fi
+    rm -rf "$_tmp"
+    if ! mv "$_staging" "$_entry" 2>/dev/null; then
+        rm -rf "$_staging"
+        [ -x "$UV_CMD" ] || { log_error "uv publish race lost and no winner found"; exit 1; }
     fi
-    log_success "Pinned uv ready ($("$UV_CMD" --version 2>/dev/null))"
-
-    # ========================================================================
-    # venv + deps: hand the rest to the shared engine.
-    # ========================================================================
-    if [ ! -d venv ]; then
-        log_info "Creating venv..."
-        "$UV_CMD" venv venv --python "$PYTHON_PIN_VERSION" >/dev/null
-        log_success "venv created"
-    fi
-
-    log_info "Syncing dependencies (venv_sync — hash-verified via uv.lock)..."
-    if ! venv/bin/python -m hermes_cli.venv_sync 2>/dev/null; then
-        # A fresh venv has no hermes_cli yet; seed it with one uv sync,
-        # which is exactly what venv_sync would have run.
-        UV_PROJECT_ENVIRONMENT="$SCRIPT_DIR/venv" "$UV_CMD" sync --extra all --locked
-    fi
-    log_success "Dependencies installed"
-
-    log_info "Provisioning managed runtimes (node, npm, git, gh, ripgrep)..."
-    "$UV_CMD" run --no-project python -m installation.provisioner || {
-        log_error "Runtime provisioning failed — re-run after checking your network"
-        exit 1
-    }
 fi
+log_success "Pinned uv ready ($("$UV_CMD" --version 2>/dev/null))"
+
+# ========================================================================
+# venv + deps: hand the rest to the shared engine.
+# ========================================================================
+if [ ! -d venv ]; then
+    log_info "Creating venv..."
+    "$UV_CMD" venv venv --python "$PYTHON_PIN_VERSION" >/dev/null
+    log_success "venv created"
+fi
+
+log_info "Syncing dependencies (venv_sync — hash-verified via uv.lock)..."
+if ! venv/bin/python -m hermes_cli.venv_sync 2>/dev/null; then
+    # A fresh venv has no hermes_cli yet; seed it with one uv sync,
+    # which is exactly what venv_sync would have run.
+    UV_PROJECT_ENVIRONMENT="$SCRIPT_DIR/venv" "$UV_CMD" sync --extra all --locked
+fi
+log_success "Dependencies installed"
+
+log_info "Provisioning managed runtimes (node, npm, git, gh, ripgrep)..."
+"$UV_CMD" run --no-project python -m installation.provisioner || {
+    log_error "Runtime provisioning failed — re-run after checking your network"
+    exit 1
+}
 
 # ============================================================================
 # .env seed + CLI symlink (the only genuinely dev-checkout-specific parts)

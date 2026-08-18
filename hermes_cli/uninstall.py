@@ -170,10 +170,6 @@ def _node_symlink_candidate_dirs() -> "list[Path]":
     # Root FHS installs put links in /usr/local/bin.
     if sys.platform == "linux":
         dirs.append(Path("/usr/local/bin"))
-    # Termux installs put links in $PREFIX/bin.
-    prefix = os.environ.get("PREFIX", "")
-    if prefix and "com.termux" in prefix:
-        dirs.append(Path(prefix) / "bin")
     return dirs
 
 
@@ -256,12 +252,6 @@ def uninstall_gateway_service():
         log_warn(f"Could not check for gateway processes: {e}")
 
     system = platform.system()
-
-    # Termux/Android has no systemd and no launchd — nothing left to do.
-    prefix = os.getenv("PREFIX", "")
-    is_termux = bool(os.getenv("TERMUX_VERSION") or "com.termux/files/usr" in prefix)
-    if is_termux:
-        return stopped_something
 
     # 2. Linux: uninstall systemd services (both user and system scopes)
     if system == "Linux":

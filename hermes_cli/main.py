@@ -7758,8 +7758,8 @@ _warn_stale_dashboard_processes = _kill_stale_dashboard_processes
 def _load_installable_optional_extras(group: str = "all") -> list[str]:
     """Return optional extras referenced by a dependency group.
 
-    ``group`` is usually ``all`` (desktop/server broad install) or
-    ``termux-all`` (Termux-compatible broad install).
+    ``group`` names an aggregate extra in pyproject.toml, usually ``all``
+    (the broad desktop/server install).
     """
     try:
         import tomllib
@@ -8592,8 +8592,7 @@ def _install_python_dependencies_with_optional_fallback(
 ) -> None:
     """Install base deps plus as many optional extras as the environment supports.
 
-    By default this targets ``.[all]``; Termux callers can pass
-    ``group='termux-all'`` to use the curated Android-compatible profile.
+    By default this targets ``.[all]``.
 
     On Windows, pre-renames live ``hermes.exe`` / ``hermes-gateway.exe`` shims
     in the venv Scripts dir before each install attempt so uv can write fresh

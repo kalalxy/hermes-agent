@@ -1,9 +1,9 @@
 """setup-hermes.sh is a wrapper over the shared engine, not a 4th installer.
 
-It used to carry its own uv installer (astral-latest via curl|sh), its
-own dependency tiers, and its own Termux handling. These tests freeze
-the wrapper shape: pinned uv from the generated fragment, deps via
-venv_sync, runtimes via the provisioner, user state via post_update.
+It used to carry its own uv installer (astral-latest via curl|sh) and
+its own dependency tiers. These tests freeze the wrapper shape: pinned
+uv from the generated fragment, deps via venv_sync, runtimes via the
+provisioner, user state via post_update.
 """
 
 from pathlib import Path
@@ -16,15 +16,6 @@ SETUP_SCRIPT = REPO_ROOT / "setup-hermes.sh"
 def test_setup_hermes_script_is_valid_shell():
     result = subprocess.run(["bash", "-n", str(SETUP_SCRIPT)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
-
-
-def test_setup_hermes_script_has_termux_path():
-    content = SETUP_SCRIPT.read_text(encoding="utf-8")
-
-    assert "is_termux()" in content
-    assert ".[termux]" in content
-    assert "constraints-termux.txt" in content
-    assert "$PREFIX/bin" in content
 
 
 def test_uv_comes_from_the_pin_table_not_astral_latest():
