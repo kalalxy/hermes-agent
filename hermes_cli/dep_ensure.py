@@ -7,7 +7,7 @@ Detection and prompting live here in Python — not in install.sh — because:
 
 install.sh is still the *installation* backend because it has 1900 lines of
 battle-tested OS detection and package-manager logic (apt/brew/pacman/dnf/
-zypper/Termux/…).  Reimplementing that in Python would be huge duplication.
+zypper/…).  Reimplementing that in Python would be huge duplication.
 
 Deps that degrade gracefully (ripgrep → grep fallback, ffmpeg → skip conversion)
 don't need ensure_dependency wired in — only hard-fail sites do (TUI needs node,

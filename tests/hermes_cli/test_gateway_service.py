@@ -277,7 +277,6 @@ class TestGatewayStopCleanup:
         unit_path.write_text("unit\n", encoding="utf-8")
 
         monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
-        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
         monkeypatch.setattr(gateway_cli, "get_systemd_unit_path", lambda system=False: unit_path)
 
         service_calls = []
@@ -675,14 +674,12 @@ class TestLaunchdDomainDetection:
 class TestGatewayServiceDetection:
     def test_supports_systemd_services_requires_systemctl_binary(self, monkeypatch):
         monkeypatch.setattr(gateway_cli, "is_linux", lambda: True)
-        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
         monkeypatch.setattr(gateway_cli.shutil, "which", lambda name: None)
 
         assert gateway_cli.supports_systemd_services() is False
 
     def test_supports_systemd_services_returns_true_when_systemctl_present(self, monkeypatch):
         monkeypatch.setattr(gateway_cli, "is_linux", lambda: True)
-        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
         monkeypatch.setattr(gateway_cli, "is_wsl", lambda: False)
         monkeypatch.setattr(gateway_cli.shutil, "which", lambda name: "/usr/bin/systemctl")
 
@@ -693,7 +690,6 @@ class TestGatewayServiceDetection:
         system_unit = SimpleNamespace(exists=lambda: True)
 
         monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
-        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
         monkeypatch.setattr(gateway_cli, "is_macos", lambda: False)
         monkeypatch.setattr(
             gateway_cli,
@@ -1329,7 +1325,6 @@ class TestDockerAwareGateway:
         import pytest
 
         monkeypatch.setattr(gateway_cli, "is_managed", lambda: False)
-        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
         monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: False)
         monkeypatch.setattr(gateway_cli, "is_macos", lambda: False)
         monkeypatch.setattr(gateway_cli, "is_wsl", lambda: False)
@@ -1831,7 +1826,6 @@ class TestGatewayCommandCatchesSystemScopeError:
         )
         monkeypatch.setattr(gateway_cli.os, "geteuid", lambda: 1000)
         monkeypatch.setattr(gateway_cli, "supports_systemd_services", lambda: True)
-        monkeypatch.setattr(gateway_cli, "is_termux", lambda: False)
         monkeypatch.setattr(gateway_cli, "kill_gateway_processes", lambda **kw: 0)
 
         args = SimpleNamespace(gateway_command="start", system=True, all=False)

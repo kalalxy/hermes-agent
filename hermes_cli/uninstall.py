@@ -187,7 +187,6 @@ def remove_node_symlinks(hermes_home: Path) -> list:
     as the ``hermes`` command:
 
     - ``/usr/local/bin/`` on root FHS installs (Linux, uid 0)
-    - ``$PREFIX/bin/`` on Termux
     - ``~/.local/bin/`` otherwise (the common non-root case)
 
     We check all candidate directories so that uninstall works regardless of
@@ -234,12 +233,11 @@ def uninstall_gateway_service():
     - macOS: launchd plists
     - Windows: Scheduled Task + Startup-folder fallback, via ``gateway_windows``
     - All platforms: standalone ``hermes gateway run`` processes
-    - Termux/Android: skips systemd (no systemd on Android), still kills standalone processes
     """
     import platform
     stopped_something = False
 
-    # 1. Kill any standalone gateway processes (all platforms, including Termux)
+    # 1. Kill any standalone gateway processes (all platforms)
     try:
         from hermes_cli.gateway import kill_gateway_processes, find_gateway_pids
         pids = find_gateway_pids()
