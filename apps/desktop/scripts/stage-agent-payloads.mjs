@@ -207,18 +207,27 @@ export function bannerExpectations(target) {
  * fall back to `git describe` for smoke tests. When bundling was requested
  * and no tag exists, payload staging is a hard error. A bundled artifact
  * without a pinned tag produces un-updatable installs.
+ *
+ * Accepts both release shapes: final (vX.Y.Z) and nightly
+ * (vX.Y.0-nightly.YYYYMMDD[HHMMSS]) — nightly CI builds a checkout at the
+ * nightly tag, so this reader must tolerate it like every other tag
+ * reader (release.py owns the tag math; readers only recognize shapes,
+ * and stay tolerant of both nightly stamp precisions like
+ * build-bundled-desktop.mjs and stamp-bootstrap-installer-version.mjs).
  */
+const RELEASE_TAG_RE = /^v(?:0|[1-9]\d{0,2})\.\d+\.\d+(?:-nightly\.20\d{6}(?:\d{6})?)?$/
+
 export function resolveTag(argv, describeFn) {
   const explicit = argv.find((a) => a.startsWith("--tag="))
   if (explicit) {
     const tag = explicit.slice("--tag=".length).trim()
-    if (!/^v(?:0|[1-9]\d{0,2})\.\d+\.\d+$/.test(tag)) {
-      throw new Error(`--tag must be a final release tag (vX.Y.Z), got: ${tag}`)
+    if (!RELEASE_TAG_RE.test(tag)) {
+      throw new Error(`--tag must be a final release tag (vX.Y.Z) or nightly tag (vX.Y.0-nightly.YYYYMMDDHHMMSS), got: ${tag}`)
     }
     return tag
   }
   const described = describeFn()
-  if (described && /^v(?:0|[1-9]\d{0,2})\.\d+\.\d+$/.test(described)) {
+  if (described && RELEASE_TAG_RE.test(described)) {
     return described
   }
   throw new Error(

@@ -115,6 +115,28 @@ test('explicit --tag wins and must be a final release', () => {
   assert.throws(() => resolveTag(['--tag=main'], () => null), /final release/)
 })
 
+test('nightly tags are accepted in both resolution paths', () => {
+  // Nightly CI checks out the nightly tag itself; this reader must
+  // tolerate both nightly stamp precisions like every other tag reader
+  // (the run-32157676651 failure mode: the workflow's validate step
+  // accepted the tag, staging rejected it).
+  assert.equal(
+    resolveTag(['--tag=v0.28.0-nightly.20260818155647'], () => null),
+    'v0.28.0-nightly.20260818155647',
+  )
+  assert.equal(
+    resolveTag(['--tag=v0.28.0-nightly.20260818'], () => null),
+    'v0.28.0-nightly.20260818',
+  )
+  assert.equal(
+    resolveTag([], () => 'v0.28.0-nightly.20260818155647'),
+    'v0.28.0-nightly.20260818155647',
+  )
+  // Truncated/malformed stamps are not a recognized shape.
+  assert.throws(() => resolveTag(['--tag=v0.28.0-nightly.2026'], () => null), /final release/)
+  assert.throws(() => resolveTag([], () => 'v0.28.0-nightly.2026'), /no release tag/)
+})
+
 test('falls back to git describe only for exact release tags', () => {
   assert.equal(resolveTag([], () => 'v0.17.0'), 'v0.17.0')
   assert.throws(() => resolveTag([], () => 'v0.17.0-14-gdeadbeef'), /no release tag/)
