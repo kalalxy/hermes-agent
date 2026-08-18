@@ -398,7 +398,7 @@ class TestDerivedLazyTarget:
         sealed_root = tmp_path / "opt" / "hermes"
         sealed_root.mkdir(parents=True)
         (sealed_root / "install-stamp.json").write_text(
-            '{"distribution": "docker", "commit": "abc123"}'
+            '{"distribution": "docker", "commit": "abc123", "updateMechanism": "external"}'
         )
         monkeypatch.setattr(
             hermes_constants, "get_install_root", lambda: sealed_root

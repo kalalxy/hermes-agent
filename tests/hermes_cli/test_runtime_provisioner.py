@@ -628,7 +628,8 @@ class TestSealedInstallStalenessGate:
     def _sealed(self, root: Path, steward: str = "nix") -> Path:
         root.mkdir(parents=True, exist_ok=True)
         (root / "install-stamp.json").write_text(
-            json.dumps({"distribution": steward}), encoding="utf-8"
+            json.dumps({"distribution": steward, "updateMechanism": "external"}),
+            encoding="utf-8",
         )
         return root
 
