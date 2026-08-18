@@ -12,8 +12,11 @@ or the bundling code. Each document covers one layer of the stack.
 | Document | Covers |
 |---|---|
 | `runtime-pins.md` | The pin table, the tool store, the provisioner, and the environment assembler. |
+| `sidecars.md` | The two pinning mechanisms (binary pins and npm lockfiles), the Camoufox handshake, and how to add a sidecar. |
 | `bundling.md` | The desktop bundle: variants, payload staging, the build script, and CI. |
 | `installers.md` | The install scripts for POSIX and Windows, the dev-checkout wrapper, and the uninstaller. |
+| `install-state.md` | The four artifacts one install writes: stamp, facts, state folder, channel record. |
+| `install-lifecycle.md` | First launch to update and repair: the shape, run-from-payload, switching to source, adoption. |
 | `updating.md` | `hermes update`, the post-update phase, boot bootstrap, and the old-updater contract. |
 | `versioning-and-channels.md` | SemVer tags, the install stamp, version display, and update channels. |
 
