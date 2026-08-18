@@ -201,6 +201,29 @@ def _safe_which(cmd: str) -> str | None:
         return None
 
 
+def _managed_node_tool(tool: str) -> tuple[str | None, str]:
+    """Locate a pinned Node tool the way Hermes locates it, plus a label.
+
+    Hermes runs the pinned node and npm from this install's runtime dir, so
+    that is the first question. A PATH probe alone misreports a healthy
+    managed install as "not found" whenever the managed dirs are not on the
+    caller's PATH, which is the normal case: nothing puts them there for an
+    interactive shell.
+
+    PATH stays as the second rung, because doctor reports what is on the
+    machine and an unmanaged system copy is still worth naming.
+    """
+    from installation import nodejs
+
+    resolver = nodejs.npm_path if tool == "npm" else nodejs.node_path
+    try:
+        return str(resolver()), "managed"
+    except nodejs.NotProvisioned:
+        pass
+    system = _safe_which(tool)
+    return system, "system"
+
+
 def _check_managed_runtimes() -> None:
     """Report the managed runtime tools from the registry's facts file.
 
@@ -2312,8 +2335,9 @@ def run_doctor(args):
             check_info("Vercel persistence: ephemeral filesystem")
 
     # Node.js + agent-browser (for browser automation tools)
-    if _safe_which("node"):
-        check_ok("Node.js")
+    _node_bin, _node_source = _managed_node_tool("node")
+    if _node_bin:
+        check_ok("Node.js", f"({_node_source}: {_node_bin})")
         # agent-browser is no longer a root package.json dependency (#43564)
         # — it resolves lazily via npx (or a global/Hermes-managed install)
         # at first use. Mirror tools.browser_tool._find_agent_browser's own
@@ -2406,7 +2430,7 @@ def run_doctor(args):
         check_warn("Node.js not found", "(optional, needed for browser tools)")
     
     # npm audit for all Node.js packages
-    _npm_bin = _safe_which("npm")
+    _npm_bin, _ = _managed_node_tool("npm")
     if _npm_bin:
         # Each entry: (cwd, label, extra_audit_args)
         # PROJECT_ROOT is audited with --workspaces=false so that the apps/*
@@ -2438,9 +2462,14 @@ def run_doctor(args):
             try:
                 # Use resolved absolute path so Windows can execute
                 # npm.cmd (CreateProcessW can't run bare .cmd names).
+                # The managed env travels with it: the npm shim starts with
+                # "#!/usr/bin/env node" and resolves its interpreter on PATH.
+                from installation import env as runtime_env
+
                 audit_result = subprocess.run(
                     [_npm_bin, "audit", "--json", *audit_extra],
                     cwd=str(npm_dir),
+                    env=runtime_env.with_managed_runtimes(),
                     capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30,
                 )
                 import json as _json
