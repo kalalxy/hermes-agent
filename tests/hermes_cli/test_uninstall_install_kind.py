@@ -65,7 +65,9 @@ def _fake_project_root(monkeypatch, tmp_path: Path, *, git: bool, distribution: 
         (root / ".git").mkdir()
     if distribution is not None:
         # The code-scoped stamp (see installation.tree.BUILD_INFO_NAME).
-        (root / "install-stamp.json").write_text(json.dumps({"distribution": distribution}))
+        (root / "install-stamp.json").write_text(
+            json.dumps({"distribution": distribution, "updateMechanism": "external"})
+        )
     monkeypatch.setattr(un, "get_project_root", lambda: root)
     return root
 

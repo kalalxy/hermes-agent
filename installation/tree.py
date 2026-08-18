@@ -1,18 +1,19 @@
 """Derive who owns the running tree — no stored mode flags.
 
-The install model has two axes (design:
-.hermes/plans/2026-08-07_183000-two-axis-install-model.md):
+The install model is stamp-pure: ``.git`` says whether the tree is a
+checkout, and the build stamp's REQUIRED ``updateMechanism`` says who
+applies the next update.
 
-* A tree with ``.git`` is a **git checkout**: ``hermes update`` owns it.
-  The checkout's existence IS the fact; no manifest records it.
-* A tree without ``.git`` is **sealed**: something external replaces it
-  wholesale. The build stamp (``install-stamp.json``) names that
-  steward in its ``distribution`` field: ``desktop-app`` (the embedded
-  desktop bundle), ``docker``, ``nix``, or a future package manager.
-
-The update channel (``stable`` or ``main``) lives in config.yaml under
-``update.channel``. It applies to git checkouts only — sealed trees
-version-track through their stewards.
+* ``.git`` + stamp(``self``) is a **managed source checkout**: ``hermes
+  update`` owns it. Installer-created checkouts are stamped at install
+  time (and shipped pre-stamp installs are adopted once at a blessed
+  root by ``step_adopt_blessed_checkout``).
+* ``.git`` + no stamp is **somebody's working tree**: update refuses
+  and points at ``git pull``.
+* A stamp without ``.git`` is **sealed**: something external replaces
+  the tree wholesale. The stamp names that steward in ``distribution``
+  (``desktop-app``, ``docker``, ``nix``, or a future package manager).
+* Neither is **unknown**.
 
 If a future feature writes to user checkouts (nothing does today), it
 must add an explicit opt-out fact FIRST. The old ``manageStyle: ejected``
@@ -33,6 +34,16 @@ BUILD_INFO_NAME = "install-stamp.json"
 STEWARD_DESKTOP = "desktop-app"
 STEWARD_DOCKER = "docker"
 STEWARD_NIX = "nix"
+
+# Who applies the next update. REQUIRED in every stamp — the writer
+# (scripts/write_install_stamp.py) refuses to emit a stamp without it,
+# and readers hard-fail a stamp missing it: a mechanism-less stamp means
+# a build lane skipped the flag, and guessing here would misroute
+# updates for every install of that artifact.
+MECHANISM_SELF = "self"
+MECHANISM_ELECTRON_UPDATER = "electron-updater"
+MECHANISM_EXTERNAL = "external"
+UPDATE_MECHANISMS = (MECHANISM_SELF, MECHANISM_ELECTRON_UPDATER, MECHANISM_EXTERNAL)
 
 CHANNEL_MAIN = "main"
 CHANNEL_STABLE = "stable"
@@ -172,9 +183,14 @@ def read_build_info(project_root: Path) -> dict:
     ships no Python runtime, so a Python process reading its own stamp as
     light means the artifact was mispackaged. Failing loudly here beats
     every consumer misclassifying the tree.
+
+    Also raises ``RuntimeError`` on a stamp without ``updateMechanism``:
+    the field is required, and a stamp missing it means the writing build
+    lane (scripts/write_install_stamp.py caller) must be fixed. Guessing a
+    mechanism would misroute updates for every install of that artifact.
     """
     try:
-        data = json.loads((Path(project_root) / BUILD_INFO_NAME).read_text(encoding="utf-8"))
+        data = json.loads((Path(project_root) / BUILD_INFO_NAME).read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return {}
     if not isinstance(data, dict):
@@ -184,6 +200,13 @@ def read_build_info(project_root: Path) -> dict:
             f"install-stamp.json at {project_root} marks this artifact as 'light' "
             "(no agent runtime). No Python process can legitimately run from a "
             "light artifact — this build is mispackaged."
+        )
+    if data.get("updateMechanism") not in UPDATE_MECHANISMS:
+        raise RuntimeError(
+            f"install-stamp.json at {project_root} is missing a valid "
+            f"'updateMechanism' (one of {', '.join(UPDATE_MECHANISMS)}). The build "
+            "lane that wrote this stamp must pass --update-mechanism to "
+            "scripts/write_install_stamp.py (or bake the field directly)."
         )
     return data
 
@@ -212,37 +235,6 @@ def steward_update_message(steward: str) -> str:
     return _STEWARD_FALLBACK_MESSAGE.format(steward=steward)
 
 
-def managed_install_roots() -> tuple[Path, ...]:
-    """The canonical roots where installers create the agent checkout.
-
-    * per-user: ``$HERMES_HOME/hermes-agent`` (usually ``~/.hermes``)
-    * FHS root installs (install.sh as root on Linux):
-      ``/usr/local/lib/hermes-agent``
-    """
-    from hermes_constants import get_hermes_home
-
-    return (get_hermes_home() / "hermes-agent", Path("/usr/local/lib/hermes-agent"))
-
-
-def is_managed_install_root(path: Path) -> bool:
-    """True when ``path`` is a canonical installer-created checkout root.
-
-    `hermes update` updates these without a question. A checkout anywhere
-    else is somebody's working tree, and update asks first.
-    """
-    try:
-        resolved = Path(path).resolve()
-    except OSError:
-        return False
-    for root in managed_install_roots():
-        try:
-            if resolved == root.resolve():
-                return True
-        except OSError:
-            continue
-    return False
-
-
 # Stewards install_method() reports as-is. An unknown steward value (a newer
 # package manager read by older code) reports "unknown" so consumers do not
 # branch on an enum member they never heard of.
@@ -252,20 +244,30 @@ _KNOWN_STEWARDS = frozenset({STEWARD_DESKTOP, STEWARD_DOCKER, STEWARD_NIX})
 def install_method(project_root: Path) -> str:
     """Derive the install method of the tree at ``project_root``.
 
-    Everything comes from the tree itself — the stamp for sealed trees,
-    ``.git`` plus location for checkouts. No stored method flags.
+    Stamp-pure: the ladder reads the tree itself — ``.git`` plus the
+    stamp's ``updateMechanism`` — and never path-matches install roots.
+    (The blessed-root table survives in exactly one place: the one-time
+    adoption step ``step_adopt_blessed_checkout``, which stamps shipped
+    pre-stamp checkouts at those roots. It is a birth certificate, not a
+    classification rung.)
 
-    * sealed tree, stamp ``distribution`` known → that steward
-      (``docker``, ``nix``, ``desktop-app``)
-    * ``.git`` at a managed install root → ``git`` (`hermes update` owns it)
-    * ``.git`` anywhere else → ``source`` (somebody's working tree;
+    * ``.git`` + stamp with ``updateMechanism: self`` → ``git``
+      (managed source checkout; `hermes update` owns it)
+    * ``.git`` + no stamp → ``source`` (somebody's working tree;
       update refuses and points at ``git pull``)
+    * stamp + no ``.git`` → sealed: the stamp's ``distribution`` names
+      the steward (``docker``, ``nix``, ``desktop-app``)
     * neither → ``unknown``
+
+    A ``.git`` tree whose stamp names a non-``self`` mechanism is NOT
+    managed by `hermes update` — it classifies as ``source`` (the stamp
+    was baked for an artifact, not for this checkout).
     """
     tree = runtime_tree(project_root)
     if isinstance(tree, Sealed):
         return tree.steward if tree.steward in _KNOWN_STEWARDS else "unknown"
-    if is_managed_install_root(tree.root):
+    info = read_build_info(tree.root)
+    if info and info.get("updateMechanism") == MECHANISM_SELF:
         return "git"
     return "source"
 

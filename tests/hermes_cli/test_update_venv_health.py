@@ -40,7 +40,7 @@ def _treat_test_root_as_managed(monkeypatch):
     The suite runs from an arbitrary checkout, so mark it managed."""
     import installation.tree as runtime_tree
 
-    monkeypatch.setattr(runtime_tree, "is_managed_install_root", lambda p: True)
+    monkeypatch.setattr(runtime_tree, "install_method", lambda p: "git")
 
 
 def _fake_venv_python(tmp_path, *, windows: bool = False):

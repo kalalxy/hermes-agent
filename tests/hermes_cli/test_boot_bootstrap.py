@@ -122,7 +122,7 @@ def test_identity_prefers_git(repo):
 
 def test_identity_sealed_stamp(tmp_path):
     (tmp_path / "install-stamp.json").write_text(
-        json.dumps({"commit": "a" * 40, "distribution": "desktop-app"}),
+        json.dumps({"commit": "a" * 40, "distribution": "desktop-app", "updateMechanism": "electron-updater"}),
         encoding="utf-8",
     )
     assert current_install_identity(tmp_path) == "a" * 40
@@ -401,7 +401,7 @@ def test_sealed_tree_bootstrap_end_to_end(tmp_path, monkeypatch):
     sealed = tmp_path / "payload"
     sealed.mkdir()
     (sealed / "install-stamp.json").write_text(
-        _json.dumps({"commit": "aaaa1111", "payload": "full"})
+        _json.dumps({"commit": "aaaa1111", "payload": "full", "updateMechanism": "electron-updater"})
     )
 
     calls = {"n": 0}
@@ -420,7 +420,7 @@ def test_sealed_tree_bootstrap_end_to_end(tmp_path, monkeypatch):
 
     # The bundle swap: same root, new stamp commit.
     (sealed / "install-stamp.json").write_text(
-        _json.dumps({"commit": "bbbb2222", "payload": "full"})
+        _json.dumps({"commit": "bbbb2222", "payload": "full", "updateMechanism": "electron-updater"})
     )
 
     assert run_boot_bootstrap(sealed)["home"] != "skipped"
@@ -487,7 +487,7 @@ class TestSealedDriftBackstop:
         root = tmp_path / "sealed"
         root.mkdir()
         (root / "install-stamp.json").write_text(
-            json.dumps({"schemaVersion": 2, "commit": "a" * 40, "distribution": "docker"}),
+            json.dumps({"schemaVersion": 2, "commit": "a" * 40, "distribution": "docker", "updateMechanism": "external"}),
             encoding="utf-8",
         )
         return root

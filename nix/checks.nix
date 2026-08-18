@@ -169,7 +169,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
 
               with tempfile.TemporaryDirectory() as td:
                   sealed = Path(td)
-                  (sealed / "install-stamp.json").write_text(json.dumps({"distribution": "nix"}))
+                  (sealed / "install-stamp.json").write_text(json.dumps({"distribution": "nix", "updateMechanism": "external"}))
                   require_current_runtimes(project_root=sealed, runtime_dir=runtime_dir)
               print("sealed-install gate: current")
               PY

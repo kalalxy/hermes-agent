@@ -441,14 +441,15 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
     """Detect how Hermes was installed.
 
     Everything derives from the tree the running code sits in — see
-    ``installation.tree.install_method`` for the ladder:
+    ``installation.tree.install_method`` for the stamp-pure ladder:
 
-    * ``docker`` / ``nix`` / ``desktop-app`` — sealed tree; the build stamp
-      (``install-stamp.json``) names the steward in ``distribution``.
-    * ``git`` — a ``.git`` checkout at a managed install root
-      (``$HERMES_HOME/hermes-agent`` or ``/usr/local/lib/hermes-agent``).
-      ``hermes update`` owns it.
-    * ``source`` — a ``.git`` checkout anywhere else: somebody's working
+    * ``docker`` / ``nix`` / ``desktop-app`` — sealed tree (stamp, no
+      ``.git``); the build stamp names the steward in ``distribution``.
+    * ``git`` — a ``.git`` checkout whose stamp says ``updateMechanism:
+      self``. ``hermes update`` owns it. (Installer-created checkouts are
+      stamped at install time; shipped pre-stamp installs are adopted once
+      by ``step_adopt_blessed_checkout``.)
+    * ``source`` — a ``.git`` checkout with no stamp: somebody's working
       tree. ``hermes update`` refuses and points at ``git pull``.
     * ``unknown`` — no stamp, no ``.git``.
 

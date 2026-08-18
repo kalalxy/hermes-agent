@@ -2498,6 +2498,15 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
         print(recommended_update_command_for_method(method))
         sys.exit(1)
 
+    # A sealed desktop payload can't fetch or apply anything — refuse with
+    # the steward message BEFORE the .git probe below prints a misleading
+    # "Not a git repository". Same guard as cmd_update's apply path.
+    if method == "desktop-app":
+        from installation.tree import steward_update_message
+
+        print(steward_update_message(method))
+        sys.exit(1)
+
     if method == "source":
         print("✗ This is a source checkout, not the managed install.")
         print("  Check it like any working tree: git fetch && git status")
@@ -4425,20 +4434,20 @@ def _cmd_update_impl(args, gateway_mode: bool):
             discard_local_changes = False
 
     # Guard: `hermes update` stashes local changes and moves the checkout
-    # to the update branch. That is correct at a managed install root (the
-    # installer created it to be updated) and rude anywhere else — a dev
-    # worktree on a feature branch would get yanked to main. Ask first;
-    # refuse when nobody can answer. --yes skips the question. The guard
-    # is a courtesy: an unclassifiable PROJECT_ROOT skips it and keeps the
-    # historical behavior.
-    from installation.tree import is_managed_install_root
+    # to the update branch. That is correct in a managed checkout (the
+    # installer stamped it `updateMechanism: self` to be updated) and rude
+    # anywhere else — a dev worktree on a feature branch would get yanked
+    # to main. Ask first; refuse when nobody can answer. --yes skips the
+    # question. The guard is a courtesy: an unclassifiable PROJECT_ROOT
+    # skips it and keeps the historical behavior.
+    from installation.tree import install_method
 
     try:
         project_root = Path(_m().PROJECT_ROOT)
         _guard_applies = (
-            (project_root / ".git").exists() and not is_managed_install_root(project_root)
+            (project_root / ".git").exists() and install_method(project_root) != "git"
         )
-    except (TypeError, OSError):
+    except (TypeError, OSError, RuntimeError):
         _guard_applies = False
     if _guard_applies:
         print(f"⚠ This is a git checkout at {project_root},")

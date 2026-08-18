@@ -32,6 +32,8 @@ export interface InstallStamp {
   source: 'build' | 'ci' | 'docker' | 'fallback' | 'git' | 'local' | 'nix' | 'unknown' | null
   /** The steward of a sealed tree ('desktop-app' | 'docker' | 'nix'), when packaged. */
   distribution: string | null
+  /** Who applies the next update. Required in every stamp. */
+  updateMechanism: 'self' | 'electron-updater' | 'external'
   baseVersion: string | null
   displayVersion: string | null
   distance: number | null

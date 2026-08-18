@@ -539,6 +539,10 @@ function stageRepo(tag, outDir) {
     "--distance", "0",
     "--source", "ci",
     "--distribution", "desktop-app",
+    // The NSIS/dmg/AppImage artifacts update through electron-updater.
+    // The MSIX lane re-stamps with `external` (store-managed) in its own
+    // pack pass — this staging default covers the electron-updater trio.
+    "--update-mechanism", "electron-updater",
   ])
   return commit
 }

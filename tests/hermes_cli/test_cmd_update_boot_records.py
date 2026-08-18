@@ -30,7 +30,7 @@ FAKE_SHA = "deadbeefcafe0123456789abcdef0123456789ab"
 def _treat_test_root_as_managed(monkeypatch):
     import installation.tree as runtime_tree
 
-    monkeypatch.setattr(runtime_tree, "is_managed_install_root", lambda p: True)
+    monkeypatch.setattr(runtime_tree, "install_method", lambda p: "git")
 
 
 @pytest.fixture(autouse=True)

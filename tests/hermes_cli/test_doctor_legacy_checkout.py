@@ -25,7 +25,7 @@ def embedded_context(tmp_path, monkeypatch):
     bundle.mkdir(parents=True)
     # The code-scoped stamp (installation.tree.BUILD_INFO_NAME).
     (bundle / "install-stamp.json").write_text(
-        json.dumps({"commit": "a" * 40, "distribution": "desktop-app"})
+        json.dumps({"commit": "a" * 40, "distribution": "desktop-app", "updateMechanism": "electron-updater"})
     )
     import hermes_cli.main as hermes_main
 

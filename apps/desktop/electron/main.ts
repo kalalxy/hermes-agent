@@ -248,7 +248,8 @@ import {
   sandboxPreflight
 } from './update-relaunch'
 import { isOfficialSshRemote, OFFICIAL_REPO_HTTPS_URL } from './update-remote'
-import { classifyUpdateRoot, managedInstallRoots, unmanagedCheckoutMessage } from './update-root-policy'
+import { classifyUpdateRoot, unmanagedCheckoutMessage } from './update-root-policy'
+import type { UpdateRootKind } from './update-root-policy'
 import {
   resolveStagedUpdaterBinary,
   resolveUpdateScriptHandoff,
@@ -2535,23 +2536,24 @@ function resolveUpdateRoot() {
 
 // Mirror the CLI's dev-tree guard (installation/tree.py): the desktop's
 // git update flow stashes local changes and moves the checkout to the update
-// branch, which is only ever correct on the installer-created checkout at a
-// managed root. A checkout anywhere else (a pinned worktree, a dev clone) is
-// somebody's working tree — refuse and point at git, exactly like
-// `hermes update` does.
-function classifyResolvedUpdateRoot(updateRoot) {
+// branch, which is only ever correct on a checkout whose install stamp says
+// `updateMechanism: "self"` (installer-created / adopted). A checkout without
+// that stamp (a pinned worktree, a dev clone) is somebody's working tree —
+// refuse and point at git, exactly like `hermes update` does.
+function classifyResolvedUpdateRoot(updateRoot: string): UpdateRootKind {
   return classifyUpdateRoot(updateRoot, {
     isGitCheckout,
-    managedRoots: managedInstallRoots(HERMES_HOME, path.join),
-    canonicalize: p => {
+    readStamp: (root: string): { updateMechanism?: string } | null => {
       try {
-        return fs.realpathSync(p)
+        // Strip a BOM before parsing — Windows tooling adds one (the CLI
+        // readers use utf-8-sig for the same reason).
+        const raw = fs.readFileSync(path.join(root, 'install-stamp.json'), 'utf8')
+        const parsed: unknown = JSON.parse(raw.replace(/^\uFEFF/, ''))
+        return parsed && typeof parsed === 'object' ? (parsed as { updateMechanism?: string }) : null
       } catch {
-        return path.resolve(p)
+        return null
       }
-    },
-    // Windows and default macOS filesystems are case-insensitive.
-    caseInsensitive: IS_WINDOWS || IS_MAC
+    }
   })
 }
 

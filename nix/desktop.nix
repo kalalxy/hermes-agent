@@ -116,7 +116,7 @@ let
               ${lib.optionalString dirty "--dirty"} \
               --base-version '${version}' \
               ${lib.optionalString (distance != null) "--distance ${toString distance}"} \
-              --source nix --distribution nix
+              --source nix --distribution nix --update-mechanism external
 
             # build the renderer bundle
             # vite's emptyOutDir wipes dist/ on every run

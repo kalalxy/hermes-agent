@@ -274,7 +274,6 @@ class TestEveryPublicFunctionRunsBare:
             from installation.tree import (
                 runtime_tree, GitCheckout, Sealed, read_build_info,
                 steward_update_message, steward_uninstall_message,
-                managed_install_roots, is_managed_install_root,
                 install_method, resolve_update_channel,
             )
             checkout = Path({str(tmp_path)!r}) / "checkout"
@@ -284,15 +283,13 @@ class TestEveryPublicFunctionRunsBare:
             sealed = Path({str(tmp_path)!r}) / "sealed"
             sealed.mkdir()
             (sealed / "install-stamp.json").write_text(
-                json.dumps({{"commit": "a" * 40, "distribution": "docker"}})
+                json.dumps({{"commit": "a" * 40, "distribution": "docker", "updateMechanism": "external"}})
             )
             tree = runtime_tree(sealed)
             assert isinstance(tree, Sealed), tree
             assert "docker" in steward_update_message(tree.steward).lower()
             steward_uninstall_message(tree.steward)
             read_build_info(sealed)
-            managed_install_roots()
-            is_managed_install_root(checkout)
             install_method(checkout)
             resolve_update_channel(checkout)
             print("ok")
