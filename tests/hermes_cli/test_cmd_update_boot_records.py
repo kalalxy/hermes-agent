@@ -23,6 +23,22 @@ import pytest
 
 from hermes_cli.main import PROJECT_ROOT, cmd_update
 
+
+# The managed uv resolves from the store facts, never from PATH. These
+# tests patch shutil.which to keep PATH tools out of the way, which must
+# not decide whether a managed uv exists — and since there is no pip
+# tier, an unresolved uv makes the update try to provision for real
+# (into the read-only nix store, under the devshell).
+@pytest.fixture(autouse=True)
+def _stub_managed_uv():
+    from unittest.mock import patch as _p
+
+    with _p("hermes_cli.managed_uv.ensure_uv", return_value="/managed/bin/uv"), \
+         _p("hermes_cli.managed_uv.resolve_uv", return_value="/managed/bin/uv"), \
+         _p("hermes_cli.managed_uv.update_managed_uv", return_value=None):
+        yield
+
+
 FAKE_SHA = "deadbeefcafe0123456789abcdef0123456789ab"
 
 
@@ -77,10 +93,24 @@ def _git_aware_side_effect(commit_count="1"):
 
 
 def _which(name, *args, **kwargs):
-    # git resolves (read_git_head needs a binary to exist before the
-    # mocked subprocess ever sees the argv); everything else is absent
-    # so the update flow takes its no-uv/no-node fallbacks.
-    return "/usr/bin/git" if name == "git" else None
+    # Everything absent so the update flow takes its no-node fallbacks.
+    # git does NOT come from PATH any more: boot_bootstrap asks
+    # installation.git.git_path(), which the fixture below pins.
+    return None
+
+
+@pytest.fixture(autouse=True)
+def _stub_git_path():
+    """Resolve git without touching PATH or the real managed binary.
+
+    read_git_head needs a binary to exist before the mocked subprocess
+    ever sees the argv. Left unpinned, git_path() finds this machine's
+    real managed git and runs it against the temp tree.
+    """
+    from unittest.mock import patch as _p
+
+    with _p("installation.git.git_path", return_value=Path("/usr/bin/git")):
+        yield
 
 
 def test_update_writes_both_boot_records(tmp_path):

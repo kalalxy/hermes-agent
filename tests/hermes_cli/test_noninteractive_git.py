@@ -147,7 +147,8 @@ def test_mcp_catalog_git_install_runs_noninteractively(monkeypatch, tmp_path):
     from hermes_cli import mcp_catalog
 
     calls = _capture_run(monkeypatch, mcp_catalog)
-    monkeypatch.setattr(mcp_catalog.shutil, "which", lambda name: "/usr/bin/git")
+    # git comes from the one locator now, not from this module's PATH lookup.
+    monkeypatch.setattr("installation.git.git_path", lambda: Path("/usr/bin/git"))
     monkeypatch.setattr(mcp_catalog, "_install_root", lambda: tmp_path)
 
     entry = mcp_catalog.CatalogEntry(

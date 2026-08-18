@@ -1750,12 +1750,14 @@ def _restore_tui_workspace(tui_dir: Path) -> bool:
     or the restore leaves the directory still missing — the caller then prints
     the manual-recovery message.
     """
-    git = shutil.which("git")
-    if not git or not (tui_dir.parent / ".git").exists():
+    from installation.git import git_path
+
+    git = git_path()
+    if git is None or not (tui_dir.parent / ".git").exists():
         return False
     try:
         subprocess.run(
-            [git, "restore", "--", tui_dir.name],
+            [str(git), "restore", "--", tui_dir.name],
             cwd=str(tui_dir.parent),
             capture_output=True,
             text=True, encoding="utf-8", errors="replace",

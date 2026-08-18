@@ -38,50 +38,22 @@ logger = logging.getLogger(__name__)
 
 @functools.lru_cache(maxsize=1)
 def _resolve_git_executable() -> Optional[str]:
-    """Resolve a git binary for subprocess use when ``PATH`` may be minimal.
+    """The git binary for subprocess use, or None when there is none.
 
-    Order: the managed git this install provisioned, then
-    :func:`shutil.which`, then common Git for Windows install paths.
+    Delegates to :func:`installation.git.git_path`. This used to carry
+    its own ladder: PATH, then a hardcoded scan of Git-for-Windows and
+    Homebrew install paths. Both rungs are gone. The scan bypassed the
+    flag floor (a found-by-path git could be any version), and on
+    Windows it contradicted the posture that the managed PortableGit is
+    the only accepted git there — bash.exe ships inside it.
 
-    macOS never falls back to ``/usr/bin/git``: that path is the
-    xcode-select SHIM, and running it on a machine without the Command
-    Line Tools pops a modal install dialog. Returning None (the caller
-    reports "git unavailable") beats hijacking the user's screen from a
-    background process.
+    None is a normal answer on macOS and Linux. Callers report it with
+    :func:`installation.git.git_install_guidance`.
     """
-    managed = managed_tool_binary("git")
-    if managed:
-        return str(managed)
+    from installation.git import git_path
 
-    found = shutil.which("git")
-    if found and not _is_macos_xcode_shim(found):
-        return found
-    if os.name == "nt":
-        prog = os.environ.get("ProgramFiles", r"C:\Program Files")
-        prog_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
-        local = os.environ.get("LOCALAPPDATA", "")
-        candidates = [
-            os.path.join(prog, "Git", "cmd", "git.exe"),
-            os.path.join(prog, "Git", "bin", "git.exe"),
-            os.path.join(prog_x86, "Git", "cmd", "git.exe"),
-            os.path.join(prog_x86, "Git", "bin", "git.exe"),
-        ]
-        if local:
-            candidates.extend(
-                (
-                    os.path.join(local, "Programs", "Git", "cmd", "git.exe"),
-                    os.path.join(local, "Programs", "Git", "bin", "git.exe"),
-                )
-            )
-    elif sys.platform == "darwin":
-        # No /usr/bin/git — see the docstring. Homebrew's is a real git.
-        candidates = ["/opt/homebrew/bin/git", "/usr/local/bin/git"]
-    else:
-        candidates = ["/usr/bin/git", "/usr/local/bin/git", "/bin/git"]
-    for c in candidates:
-        if c and os.path.isfile(c):
-            return c
-    return None
+    found = git_path()
+    return str(found) if found is not None else None
 
 
 class PluginOperationError(Exception):

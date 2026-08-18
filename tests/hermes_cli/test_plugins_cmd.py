@@ -117,30 +117,32 @@ class TestResolveSubdirWithin:
 
 
 class TestResolveGitExecutable:
-    """Fallback resolution when bare ``git`` is not discoverable via ``PATH``."""
+    """The resolver delegates; it no longer carries its own ladder.
+
+    It used to try PATH and then a hardcoded scan of Git-for-Windows and
+    Homebrew install paths. Both rungs are gone: the scan bypassed the
+    flag floor, and on Windows it contradicted the posture that the
+    managed PortableGit is the only accepted git there.
+    """
 
     def teardown_method(self):
         _resolve_git_executable.cache_clear()
 
-    def test_prefers_shutil_which(self):
+    def test_returns_what_the_one_locator_returns(self):
         import hermes_cli.plugins_cmd as pc
 
         _resolve_git_executable.cache_clear()
-        with patch.object(pc.shutil, "which", return_value="/usr/local/bin/git"):
+        with patch("installation.git.git_path", return_value=Path("/usr/local/bin/git")):
             assert pc._resolve_git_executable() == "/usr/local/bin/git"
 
-    def test_fallback_posix_first_matching_path(self):
+    def test_no_git_is_reported_as_none(self):
+        """None is a normal answer on macOS and Linux: those platforms
+        use the machine's git, and it may simply not be installed."""
         import hermes_cli.plugins_cmd as pc
 
         _resolve_git_executable.cache_clear()
-
-        def _isfile(p: str) -> bool:
-            return p == "/usr/local/bin/git"
-
-        with patch.object(pc.shutil, "which", return_value=None):
-            with patch.object(pc.os, "name", "posix"):
-                with patch.object(pc.os.path, "isfile", side_effect=_isfile):
-                    assert pc._resolve_git_executable() == "/usr/local/bin/git"
+        with patch("installation.git.git_path", return_value=None):
+            assert pc._resolve_git_executable() is None
 
 
     def test_git_pull_uses_resolved_executable(self, tmp_path):

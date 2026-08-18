@@ -410,9 +410,15 @@ def _do_git_install(entry: CatalogEntry) -> Path:
     install = entry.install
     dest = _install_root() / entry.name
 
-    git = shutil.which("git")
-    if not git:
-        raise CatalogError("git is required to install this MCP but was not found on PATH")
+    from installation.git import git_install_guidance, git_path
+
+    git_bin = git_path()
+    if git_bin is None:
+        raise CatalogError(
+            f"git is required to install this MCP, and this machine has none. "
+            f"{git_install_guidance()}"
+        )
+    git = str(git_bin)
 
     if dest.exists():
         # Fresh checkout each install — manifest version is the source of truth,

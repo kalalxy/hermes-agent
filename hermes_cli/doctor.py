@@ -2122,11 +2122,17 @@ def run_doctor(args):
                     issues.append(f"Missing {_cmd_link_display}/hermes symlink — run 'hermes doctor --fix'")
 
     _section("External Tools")
-    # Git
-    if _safe_which("git"):
-        check_ok("git")
+    # Git. git_path() answers with the git Hermes would actually run:
+    # the managed one, else a system one that clears the flag floor and
+    # is not the macOS xcode-select shim. A bare PATH probe says "found"
+    # for both of those, and then Hermes fails on the real call.
+    from installation.git import git_install_guidance, git_path
+
+    _git_bin = git_path()
+    if _git_bin is not None:
+        check_ok("git", f"({_git_bin})")
     else:
-        check_warn("git not found", "(optional)")
+        check_warn("no usable git", f"(optional) {git_install_guidance()}")
     
     # Managed runtimes: what the registry says this install provisioned.
     # A tool that is missing here is not a "go install it yourself"

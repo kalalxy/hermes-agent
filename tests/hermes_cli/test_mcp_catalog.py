@@ -485,7 +485,10 @@ class TestGitInstallShaRef:
             return _FakeProc(returncode=0)
 
         monkeypatch.setattr(mcp_catalog.subprocess, "run", fake_run)
-        monkeypatch.setattr(mcp_catalog.shutil, "which", lambda x: "/usr/bin/git")
+        # git comes from the one locator now, not from this module's PATH lookup.
+        monkeypatch.setattr(
+            "installation.git.git_path", lambda: Path("/usr/bin/git")
+        )
 
         from hermes_cli.mcp_catalog import get_entry
         entry = get_entry("demo")

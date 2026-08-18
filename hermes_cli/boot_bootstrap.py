@@ -91,33 +91,26 @@ def read_git_head(root: Path) -> str | None:
 
 
 def _git_binary() -> str | None:
-    """The git to run: managed first, PATH second, None when neither.
+    """The git to run, or None when this machine has no usable one.
 
-    Managed-first because it is the one we pinned and verified. The
-    import is local: ``installation`` reaches the registry facts, and
-    boot_bootstrap is imported early enough that a module-level import
-    would widen the boot import graph for a function most boots skip.
+    Delegates to :func:`installation.git.git_path`, which is the one
+    place that knows the posture: managed git first, a system git that
+    clears the flag floor second, and never the macOS xcode-select shim
+    (a stub whose only behaviour is to pop an "install developer tools?"
+    dialog, which a boot-time path must never trigger).
 
-    The macOS xcode-select shim is not git — it is a stub whose only
-    behaviour is to pop an "install developer tools?" dialog, which a
-    boot-time path must never trigger.
+    The import is local: boot_bootstrap is imported early enough that a
+    module-level import would widen the boot import graph for a function
+    most boots skip.
     """
     try:
-        from installation.env import is_macos_xcode_shim, managed_tool_binary
+        from installation.git import git_path
 
-        managed = managed_tool_binary("git")
-        if managed is not None:
-            return str(managed)
+        found = git_path()
     except Exception as exc:  # noqa: BLE001 — boot must not die on a lookup
-        logger.debug("managed git lookup failed: %s", exc)
-        is_macos_xcode_shim = None  # type: ignore[assignment]
-
-    found = shutil.which("git")
-    if found is None:
+        logger.debug("git lookup failed: %s", exc)
         return None
-    if is_macos_xcode_shim is not None and is_macos_xcode_shim(found):
-        return None
-    return found
+    return str(found) if found is not None else None
 
 
 def current_install_identity(project_root: Path) -> str | None:

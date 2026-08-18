@@ -81,8 +81,13 @@ def collect_working_diff(cwd: str, mode: str = "working",
         return {"success": False,
                 "error": f"Unknown mode '{mode}'. Use: {', '.join(VALID_MODES)}"}
 
-    if not shutil.which("git"):
-        return {"success": False, "error": "git is not installed or not on PATH."}
+    from installation.git import git_install_guidance, git_path
+
+    if git_path() is None:
+        return {
+            "success": False,
+            "error": f"git is not available. {git_install_guidance()}",
+        }
 
     try:
         code, _ = _run(["rev-parse", "--is-inside-work-tree"], cwd, timeout=5)

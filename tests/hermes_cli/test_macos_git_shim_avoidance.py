@@ -71,10 +71,12 @@ class TestPluginGitResolutionPrefersManaged:
         binary.write_text("#!/bin/sh\n")
         save_facts({"git": RuntimeFact(version="2.53.0", path="git/bin/git")}, tmp_path)
 
+        # Patch the shared locator's source of truth: plugins_cmd no
+        # longer resolves git itself, it asks installation.git.
         monkeypatch.setattr(
-            plugins_cmd, "managed_tool_binary", lambda tool, *a, **kw: binary
+            "installation.env.managed_tool_binary", lambda tool, *a, **kw: binary
         )
-        monkeypatch.setattr(plugins_cmd.shutil, "which", lambda _: "/usr/bin/git")
+        monkeypatch.setattr("installation.git.shutil.which", lambda _: "/usr/bin/git")
         plugins_cmd._resolve_git_executable.cache_clear()
 
         assert plugins_cmd._resolve_git_executable() == str(binary)
