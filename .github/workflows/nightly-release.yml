@@ -1,0 +1,81 @@
+name: Nightly Release
+
+# Publishes the nightly prerelease channel: one dated prerelease per UTC
+# day, versioned NEXT-MINOR over the newest stable tag
+# (v<stable.minor+1>.0-nightly.<YYYYMMDD>), so a nightly always outversions
+# every stable build of the current line and loses to the next stable
+# minor — which is exactly how the electron-updater channel switch works
+# in both directions (see hermes_cli/update_channel.py).
+#
+# ALL tag math lives in scripts/release.py --nightly; this workflow only
+# provides credentials and sequencing. The script is the skip gate too:
+# no new commits since the last nightly → it prints "nothing to do",
+# emits no tag output, and the build job is skipped. No human publishes
+# anything: the release is created as a PRERELEASE immediately and the
+# bundled-desktop matrix attaches installers to it by tag.
+#
+# schedule: is the ONE sanctioned time trigger in this repo (nightly
+# exemption). Everything else stays event-driven.
+
+on:
+  schedule:
+    - cron: '30 8 * * *' # daily, 08:30 UTC — after the US-evening push wave
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # tag push + release create/delete (prune)
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag + publish the nightly prerelease
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.nightly.outputs.tag }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The changelog walks commits since the previous nightly tag and
+          # the tag-math reads the full tag list — both need real history.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Tag and publish
+        id: nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/release.py --nightly --publish --remote origin
+
+  build:
+    name: Build installers for the nightly
+    needs: tag
+    # No tag output means release.py decided there is nothing to do.
+    if: needs.tag.outputs.tag != ''
+    uses: ./.github/workflows/desktop-bundled-release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+      upload_release: true
+    secrets: inherit
+
+  prune:
+    name: Prune nightlies older than 14 days
+    runs-on: ubuntu-24.04
+    needs: build
+    # Prune even when the build had nothing to do today (skipped), but
+    # never while a build is mid-flight for the release being pruned.
+    if: always() && needs.build.result != 'cancelled'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Prune
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release.py --prune-nightlies --publish --remote origin

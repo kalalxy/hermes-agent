@@ -9,7 +9,8 @@ interface ProductIdentity {
   appNamePascal: string
   /** OS-level app identity w/ org prefix. e.g. "NousResearch.HermesLight" */
   msixAppIdWithOrg: string
-  /** electron-updater feed channel. e.g. "light" | "latest". */
+  /** electron-updater feed channel this build publishes to. Stable tags:
+   *  "latest" | "light"; nightly tags: "nightly" | "light-nightly". */
   channel: string
   /** Deep-link scheme this artifact owns. e.g. "hermes-light" | "hermes". */
   protocolScheme: string

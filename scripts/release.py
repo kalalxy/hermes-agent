@@ -22,12 +22,13 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -2183,6 +2184,10 @@ def remote_github_repo(remote: str) -> str | None:
 # The legacy CalVer tags (v2026.7.20) must never match as SemVer.
 _SEMVER_TAG_RE = re.compile(r"v(?:0|[1-9]\d{0,2})\.\d+\.\d+$")
 _LEGACY_CALVER_TAG_RE = re.compile(r"v20\d{2}\.\d+\.\d+(?:\.\d+)?$")
+# Nightly prerelease tags: v<major>.<minor>.0-nightly.<YYYYMMDD>. The
+# suffix keeps them out of every stable selector (all of which require
+# the no-suffix SemVer shape above); the date makes one tag per UTC day.
+_NIGHTLY_TAG_RE = re.compile(r"v(?:0|[1-9]\d{0,2})\.\d+\.0-nightly\.(20\d{6})$")
 
 
 def release_tag_for_version(semver: str) -> str:
@@ -2203,6 +2208,30 @@ def get_last_tag():
     if legacy_tags:
         return legacy_tags.split("\n")[0]
     return None
+
+
+def get_last_nightly_tag():
+    """The newest nightly tag, or None. Date order == version order within
+    one minor; across minors the -v:refname sort already ranks the newer
+    minor first."""
+    tags = git("tag", "--list", "v[0-9]*-nightly.*", "--sort=-v:refname")
+    for tag in (tags.split("\n") if tags else []):
+        if _NIGHTLY_TAG_RE.fullmatch(tag):
+            return tag
+    return None
+
+
+def nightly_tag_for_date(stable_tag: "str | None", date_utc: str) -> str:
+    """The nightly tag name for a UTC date: next-MINOR over the newest
+    stable release, patch 0, dated suffix — v0.28.0-nightly.20260818 when
+    stable is v0.27.x. Nightlies always outversion every stable build of
+    the current line and lose to the NEXT stable minor, which is exactly
+    the electron-updater semver behavior the channel switch relies on
+    (nightly→stable = wait for the next minor)."""
+    version = (stable_tag or "v0.0.0").lstrip("v")
+    parts = version.split(".")
+    major, minor = int(parts[0]), int(parts[1])
+    return f"v{major}.{minor + 1}.0-nightly.{date_utc}"
 
 
 def get_current_version():
@@ -2567,10 +2596,147 @@ def generate_changelog(commits, tag_name, semver, repo_url="https://github.com/N
     return "\n".join(lines)
 
 
+def cmd_nightly(args) -> None:
+    """--nightly: tag + publish today's nightly prerelease.
+
+    Owns ALL the tag math (the workflow passes only --publish/--remote):
+    next-MINOR over the newest stable tag, dated suffix, changelog since
+    the last nightly (or last stable for the first one). No version-file
+    bump, no commit — the tag points at HEAD as-is, and the stamp's
+    displayVersion carries the nightly version from the tag. Published as
+    PRERELEASE immediately (no human in the loop; the desktop workflow
+    attaches artifacts to the existing release by tag). Exits 0 with
+    "nothing to do" when HEAD is already tagged by the last nightly —
+    the skip-if-no-new-commits gate lives HERE, not in workflow YAML.
+    """
+    date_utc = args.date or datetime.now(timezone.utc).strftime("%Y%m%d")
+    stable_tag = get_last_tag()
+    if stable_tag is None:
+        print("✗ No stable release tag exists; a nightly needs a stable line to version over.")
+        sys.exit(1)
+    tag_name = nightly_tag_for_date(stable_tag, date_utc)
+
+    prev_nightly = get_last_nightly_tag()
+    since = prev_nightly or stable_tag
+
+    if git_result("rev-parse", "--verify", "--quiet", f"refs/tags/{tag_name}").returncode == 0:
+        print(f"✓ {tag_name} already exists — nothing to do.")
+        return
+
+    if prev_nightly:
+        head = git("rev-parse", "HEAD")
+        if head and head == git("rev-parse", f"{prev_nightly}^{{commit}}"):
+            print(f"✓ No new commits since {prev_nightly} — nothing to do.")
+            return
+
+    commits = get_commits(since_tag=since)
+    if not commits:
+        print(f"✓ No new commits since {since} — nothing to do.")
+        return
+
+    version = tag_name.lstrip("v")
+    print(f"Nightly: {tag_name} ({len(commits)} commits since {since})")
+    changelog = generate_changelog(
+        commits, tag_name, version, prev_tag=since, first_release=False
+    )
+
+    if not args.publish:
+        print(changelog)
+        print("\nDry run complete. To publish, add --publish")
+        return
+
+    push_remote = resolve_push_remote(args.remote)
+    gh_repo = remote_github_repo(push_remote)
+
+    tag_result = git_result(
+        "tag", "-a", tag_name, "-m", f"Hermes Agent nightly {date_utc}"
+    )
+    if tag_result.returncode != 0:
+        print(f"✗ Failed to create tag {tag_name}: {tag_result.stderr.strip()}")
+        sys.exit(1)
+    push_result = git_result("push", push_remote, f"refs/tags/{tag_name}")
+    if push_result.returncode != 0:
+        print(f"✗ Failed to push {tag_name}: {push_result.stderr.strip()}")
+        sys.exit(1)
+    print(f"✓ Pushed {tag_name} to {push_remote}")
+
+    changelog_file = REPO_ROOT / ".release_notes.md"
+    changelog_file.write_text(changelog, encoding="utf-8")
+    gh_cmd = [
+        "gh", "release", "create", tag_name,
+        "--prerelease",
+        "--title", f"Hermes Agent nightly {date_utc} ({tag_name})",
+        "--notes-file", str(changelog_file),
+    ]
+    if gh_repo:
+        gh_cmd += ["--repo", gh_repo]
+    result = subprocess.run(
+        gh_cmd, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", cwd=str(REPO_ROOT),
+    )
+    if result.returncode != 0:
+        print(f"✗ GitHub prerelease failed: {result.stderr.strip()}")
+        print(f"    Notes kept at {changelog_file}; tag {tag_name} is pushed.")
+        sys.exit(1)
+    changelog_file.unlink(missing_ok=True)
+    print(f"✓ Nightly prerelease published: {result.stdout.strip()}")
+    # Hand the tag to the calling workflow (the desktop build job keys on
+    # it). Emitting here keeps ALL the tag math inside release.py.
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a", encoding="utf-8") as f:
+            f.write(f"tag={tag_name}\n")
+
+
+def prune_old_nightlies(args) -> None:
+    """--prune-nightlies: delete nightly releases+tags older than 14 days.
+
+    Keep-on-doubt: any parse failure keeps the release. The keep window is
+    dated by the tag's own YYYYMMDD suffix, not the release timestamp, so
+    a re-published old tag never resets its clock.
+    """
+    push_remote = resolve_push_remote(args.remote)
+    gh_repo = remote_github_repo(push_remote)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y%m%d")
+
+    tags = git("tag", "--list", "v[0-9]*-nightly.*", "--sort=-v:refname")
+    doomed = []
+    for tag in (tags.split("\n") if tags else []):
+        m = _NIGHTLY_TAG_RE.fullmatch(tag)
+        if m and m.group(1) < cutoff:
+            doomed.append(tag)
+    if not doomed:
+        print("✓ No nightlies older than 14 days.")
+        return
+    for tag in doomed:
+        if not args.publish:
+            print(f"Would delete {tag}")
+            continue
+        gh_cmd = ["gh", "release", "delete", tag, "--yes", "--cleanup-tag"]
+        if gh_repo:
+            gh_cmd += ["--repo", gh_repo]
+        result = subprocess.run(
+            gh_cmd, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", cwd=str(REPO_ROOT),
+        )
+        if result.returncode == 0:
+            print(f"✓ Deleted {tag}")
+        else:
+            print(f"⚠ Could not delete {tag}: {result.stderr.strip()}")
+    if not args.publish:
+        print("Dry run complete. To delete, add --publish")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Hermes Agent Release Tool")
     parser.add_argument("--bump", choices=["major", "minor", "patch"],
                         help="Which semver component to bump")
+    parser.add_argument("--nightly", action="store_true",
+                        help="Tag + publish today's nightly prerelease "
+                             "(v<stable.minor+1>.0-nightly.<YYYYMMDD>); no-op when "
+                             "HEAD has no new commits since the last nightly")
+    parser.add_argument("--prune-nightlies", action="store_true",
+                        help="Delete nightly releases+tags older than 14 days")
     parser.add_argument("--publish", action="store_true",
                         help="Actually create the tag and GitHub release (otherwise dry run)")
     parser.add_argument("--remote", type=str,
@@ -2584,6 +2750,15 @@ def main():
     parser.add_argument("--output", type=str,
                         help="Write changelog to file instead of stdout")
     args = parser.parse_args()
+
+    if args.nightly and args.bump:
+        parser.error("--nightly and --bump are mutually exclusive")
+    if args.nightly:
+        cmd_nightly(args)
+        return
+    if args.prune_nightlies:
+        prune_old_nightlies(args)
+        return
 
     # Determine release-date metadata.
     if args.date:

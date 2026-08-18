@@ -46,13 +46,27 @@ on:
         required: false
         type: boolean
         default: false
+  # The nightly-release workflow calls this with its dated prerelease tag
+  # (vX.Y.0-nightly.YYYYMMDD — a shape the push filter above can never
+  # match, so a nightly tag push cannot double-trigger this workflow).
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to bundle. Must exist on the repo.'
+        required: true
+        type: string
+      upload_release:
+        description: 'Attach artifacts to the GitHub release for the tag'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write # for the release asset upload; read-only for all other content
   id-token: write # for the OIDC federated login to Azure (Windows signing)
 
 concurrency:
-  group: desktop-bundled-release-${{ github.event.inputs.tag || github.ref }}
+  group: desktop-bundled-release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -99,7 +113,7 @@ jobs:
       # payload staging; 'light' builds the remote-only client under its
       # own app identity (electron-builder.config.cjs overlay).
       HERMES_DESKTOP_VARIANT: ${{ matrix.variant }}
-      HERMES_PAYLOAD_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      HERMES_PAYLOAD_TAG: ${{ inputs.tag || github.ref_name }}
       HERMES_PAYLOAD_PYTHON: '3.11'
     steps:
       # disable spotlight and XProtect. for speed and dmg detaching flakiness
@@ -117,8 +131,9 @@ jobs:
         shell: bash
         run: |
           case "$HERMES_PAYLOAD_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*-nightly.20[0-9][0-9][0-9][0-9][0-9][0-9]) echo "nightly tag: $HERMES_PAYLOAD_TAG" ;;
             v[0-9]*.[0-9]*.[0-9]*) echo "tag: $HERMES_PAYLOAD_TAG" ;;
-            *) echo "::error::'$HERMES_PAYLOAD_TAG' is not a final release tag (vX.Y.Z)"; exit 1 ;;
+            *) echo "::error::'$HERMES_PAYLOAD_TAG' is not a release tag (vX.Y.Z or vX.Y.0-nightly.YYYYMMDD)"; exit 1 ;;
           esac
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -416,13 +431,15 @@ jobs:
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
             apps/desktop/release/light*.yml
+            apps/desktop/release/nightly*.yml
             apps/desktop/release/unpacked-*.tar.gz
           retention-days: 30
           if-no-files-found: error
 
-      # ── Attach to the GitHub release (tag pushes and opt-in dispatch) ────
+      # ── Attach to the GitHub release (tag pushes, opt-in dispatch, and
+      # the nightly caller which passes upload_release: true) ─────────────
       - name: Upload to GitHub release
-        if: github.event_name == 'push' || github.event.inputs.upload_release == 'true'
+        if: github.event_name == 'push' || inputs.upload_release == true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -431,7 +448,7 @@ jobs:
           files=(apps/desktop/release/*.dmg apps/desktop/release/*.zip \
                  apps/desktop/release/*.exe apps/desktop/release/*.AppImage \
                  apps/desktop/release/*.blockmap apps/desktop/release/latest*.yml \
-                 apps/desktop/release/light*.yml)
+                 apps/desktop/release/light*.yml apps/desktop/release/nightly*.yml)
           if [ ${#files[@]} -eq 0 ]; then
             echo "::error::no release artifacts found"; exit 1
           fi
