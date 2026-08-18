@@ -131,9 +131,9 @@ jobs:
         shell: bash
         run: |
           case "$HERMES_PAYLOAD_TAG" in
-            v[0-9]*.[0-9]*.[0-9]*-nightly.20[0-9][0-9][0-9][0-9][0-9][0-9]) echo "nightly tag: $HERMES_PAYLOAD_TAG" ;;
+            v[0-9]*.[0-9]*.[0-9]*-nightly.20[0-9][0-9][0-9][0-9][0-9][0-9]*) echo "nightly tag: $HERMES_PAYLOAD_TAG" ;;
             v[0-9]*.[0-9]*.[0-9]*) echo "tag: $HERMES_PAYLOAD_TAG" ;;
-            *) echo "::error::'$HERMES_PAYLOAD_TAG' is not a release tag (vX.Y.Z or vX.Y.0-nightly.YYYYMMDD)"; exit 1 ;;
+            *) echo "::error::'$HERMES_PAYLOAD_TAG' is not a release tag (vX.Y.Z or vX.Y.0-nightly.YYYYMMDDHHMMSS)"; exit 1 ;;
           esac
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

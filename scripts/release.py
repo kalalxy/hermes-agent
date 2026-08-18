@@ -2184,10 +2184,14 @@ def remote_github_repo(remote: str) -> str | None:
 # The legacy CalVer tags (v2026.7.20) must never match as SemVer.
 _SEMVER_TAG_RE = re.compile(r"v(?:0|[1-9]\d{0,2})\.\d+\.\d+$")
 _LEGACY_CALVER_TAG_RE = re.compile(r"v20\d{2}\.\d+\.\d+(?:\.\d+)?$")
-# Nightly prerelease tags: v<major>.<minor>.0-nightly.<YYYYMMDD>. The
-# suffix keeps them out of every stable selector (all of which require
-# the no-suffix SemVer shape above); the date makes one tag per UTC day.
-_NIGHTLY_TAG_RE = re.compile(r"v(?:0|[1-9]\d{0,2})\.\d+\.0-nightly\.(20\d{6})$")
+# Nightly prerelease tags: v<major>.<minor>.0-nightly.<YYYYMMDDHHMMSS>.
+# The suffix keeps them out of every stable selector (all of which
+# require the no-suffix SemVer shape above). Second precision so manual
+# fires can publish several nightlies per day; the identifier is pure
+# numeric and fixed-length, so semver prerelease comparison (numeric)
+# and lexical sort both order it chronologically. Readers stay tolerant
+# of the original date-only (8-digit) shape.
+_NIGHTLY_TAG_RE = re.compile(r"v(?:0|[1-9]\d{0,2})\.\d+\.0-nightly\.(20\d{6}(?:\d{6})?)$")
 
 
 def release_tag_for_version(semver: str) -> str:
@@ -2222,9 +2226,9 @@ def get_last_nightly_tag():
 
 
 def nightly_tag_for_date(stable_tag: "str | None", date_utc: str) -> str:
-    """The nightly tag name for a UTC date: next-MINOR over the newest
-    stable release, patch 0, dated suffix — v0.28.0-nightly.20260818 when
-    stable is v0.27.x. Nightlies always outversion every stable build of
+    """The nightly tag name for a UTC timestamp: next-MINOR over the
+    newest stable release, patch 0, second-precision suffix —
+    v0.28.0-nightly.20260818103000 when stable is v0.27.x. Nightlies always outversion every stable build of
     the current line and lose to the NEXT stable minor, which is exactly
     the electron-updater semver behavior the channel switch relies on
     (nightly→stable = wait for the next minor)."""
@@ -2615,7 +2619,7 @@ def cmd_nightly(args) -> None:
     "nothing to do" when HEAD is already tagged by the last nightly —
     the skip-if-no-new-commits gate lives HERE, not in workflow YAML.
     """
-    date_utc = args.date or datetime.now(timezone.utc).strftime("%Y%m%d")
+    date_utc = args.date or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     stable_tag = get_last_tag()
     if stable_tag is None:
         print("✗ No stable release tag exists; a nightly needs a stable line to version over.")
@@ -2705,11 +2709,15 @@ def prune_old_nightlies(args) -> None:
     gh_repo = remote_github_repo(push_remote)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y%m%d")
 
+
     tags = git("tag", "--list", "v[0-9]*-nightly.*", "--sort=-v:refname")
     doomed = []
     for tag in (tags.split("\n") if tags else []):
         m = _NIGHTLY_TAG_RE.fullmatch(tag)
-        if m and m.group(1) < cutoff:
+        # Compare on the DATE prefix only: the suffix may be 8 (legacy) or
+        # 14 (timestamped) digits, and a 14-digit string compared against
+        # an 8-digit cutoff would be decided by length, not by day.
+        if m and m.group(1)[:8] < cutoff:
             doomed.append(tag)
     if not doomed:
         print("✓ No nightlies older than 14 days.")
@@ -2739,7 +2747,7 @@ def main():
                         help="Which semver component to bump")
     parser.add_argument("--nightly", action="store_true",
                         help="Tag + publish today's nightly prerelease "
-                             "(v<stable.minor+1>.0-nightly.<YYYYMMDD>); no-op when "
+                             "(v<stable.minor+1>.0-nightly.<YYYYMMDDHHMMSS>); no-op when "
                              "HEAD has no new commits since the last nightly")
     parser.add_argument("--prune-nightlies", action="store_true",
                         help="Delete nightly releases+tags older than 14 days")

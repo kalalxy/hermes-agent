@@ -20,9 +20,9 @@ const APP = path.join(REPO_ROOT, "apps", "bootstrap-installer")
 
 const arg = process.argv.find((a) => a.startsWith("--version="))
 const raw = arg ? arg.slice("--version=".length) : ""
-// Accept the tag form (vX.Y.Z / vX.Y.0-nightly.YYYYMMDD) or the bare version.
+// Accept the tag form (vX.Y.Z / vX.Y.0-nightly.YYYYMMDDHHMMSS) or the bare version.
 const version = raw.replace(/^v/, "")
-if (!/^\d+\.\d+\.\d+(-nightly\.20\d{6})?$/.test(version)) {
+if (!/^\d+\.\d+\.\d+(-nightly\.20\d{6}(?:\d{6})?)?$/.test(version)) {
   console.error(`stamp-bootstrap-installer-version: bad --version=${raw}`)
   process.exit(1)
 }

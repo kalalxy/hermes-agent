@@ -1,11 +1,14 @@
 name: Nightly Release
 
-# Publishes the nightly prerelease channel: one dated prerelease per UTC
-# day, versioned NEXT-MINOR over the newest stable tag
-# (v<stable.minor+1>.0-nightly.<YYYYMMDD>), so a nightly always outversions
-# every stable build of the current line and loses to the next stable
-# minor — which is exactly how the electron-updater channel switch works
-# in both directions (see hermes_cli/update_channel.py).
+# Publishes the nightly prerelease channel: a dated prerelease versioned
+# NEXT-MINOR over the newest stable tag
+# (v<stable.minor+1>.0-nightly.<YYYYMMDDHHMMSS>), so a nightly always
+# outversions every stable build of the current line and loses to the
+# next stable minor — which is exactly how the electron-updater channel
+# switch works in both directions (see hermes_cli/update_channel.py).
+# Second-precision suffix: manual dispatches can publish several
+# nightlies per day; the scheduled run publishes at most one because
+# release.py skips when HEAD has no new commits since the last nightly.
 #
 # ALL tag math lives in scripts/release.py --nightly; this workflow only
 # provides credentials and sequencing. The script is the skip gate too:
@@ -24,6 +27,10 @@ on:
 
 permissions:
   contents: write # tag push + release create/delete (prune)
+  id-token: write # NOT used here, but a reusable-workflow CALL can only
+                  # grant permissions the caller itself holds — the desktop
+                  # build job needs id-token for Azure signing, so the
+                  # nightly caller must carry it too.
 
 concurrency:
   group: nightly-release

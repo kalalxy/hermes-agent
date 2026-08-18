@@ -34,7 +34,7 @@ END_MARKER = "<!-- /HERMES_BUILDS_TABLE -->"
 #   Hermes-0.28.0-mac-arm64.dmg        (bundled)
 #   HermesLight-0.28.0-win-x64.exe     (light)
 _ASSET_RE = re.compile(
-    r"^(?P<app>Hermes|HermesLight)-(?P<version>[^-]+(?:-nightly\.\d{8})?)"
+    r"^(?P<app>Hermes|HermesLight)-(?P<version>[^-]+(?:-nightly\.\d{8}(?:\d{6})?)?)"
     r"-(?P<os>mac|win|linux)-(?P<arch>x64|arm64)\.(?P<ext>dmg|exe|AppImage)$"
 )
 
