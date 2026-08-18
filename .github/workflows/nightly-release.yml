@@ -26,7 +26,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write # tag push + release create/delete (prune)
+  contents: write # tag push + release create/delete for prune
   id-token: write # NOT used here, but a reusable-workflow CALL can only
                   # grant permissions the caller itself holds — the desktop
                   # build job needs id-token for Azure signing, so the
