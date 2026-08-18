@@ -91,39 +91,44 @@ misclassify the tree.
 ## The desktop updater feeds
 
 The desktop app uses electron-updater, which reads feed files from a
-GitHub release. Two feeds exist, one per variant:
+GitHub release. Four feeds exist, one per variant and channel pair:
 
 | Variant | Channel | Feed file |
 |---|---|---|
 | Hermes (bundled) | `latest` | `latest*.yml` |
+| Hermes (bundled), nightly | `nightly` | `nightly*.yml` |
 | Hermes Light | `light` | `light*.yml` |
+| Hermes Light, nightly | `light-nightly` | `light-nightly*.yml` |
 
 The channel is part of the product identity
-(`apps/desktop/product-identity.cjs`). The feed's owner and repo come
-from `GITHUB_REPOSITORY`, so a fork's builds publish to and update from
-the fork's own releases. That is the fork-updater-channel behavior. A
-fork must not point users at the upstream feed.
-
-Bundled installs are locked to the stable vocabulary. The update-check
-report says `channel: stable`. Every renderer surface can use release
-language without probing the install manifest.
+(`apps/desktop/product-identity.cjs`), which derives it from the build
+tag: a `vX.Y.0-nightly.<timestamp>` tag publishes to the nightly feeds.
+One release workflow serves both channels. The feed's owner and repo
+come from `GITHUB_REPOSITORY`, so a fork's builds publish to and update
+from the fork's own releases. That is the fork-updater-channel
+behavior. A fork must not point users at the upstream feed.
 
 ## The channel settings, one table
 
 | Setting | Where | Applies to | Values |
 |---|---|---|---|
-| `update.channel` | `config.yaml` | Git installs | `auto` (default), `main`, `stable` |
-| Channel in manifest | `.hermes-install.json` | Git installs | `main` (default), `stable` |
-| Updater channel | Product identity, build time | Desktop app | `latest`, `light` |
-| Steward versioning | Install stamp | Sealed trees | None. The steward owns it |
+| `update.installs.<sha16>.channel` | `config.yaml`, per install | Any install whose mechanism is not `external` | `main`, `stable`, `nightly` |
+| Updater channel | Product identity, build time | Which feed a desktop build PUBLISHES to | `latest`, `nightly`, `light`, `light-nightly` |
+| Steward versioning | Install stamp | `external` installs | None. The steward owns it |
 
-The effective channel for a Git install resolves in this order:
+The effective channel resolves in two steps:
 
-1. Bundled installs are always `stable`. The config cannot override
-   what the installer ships. Eject first to change this.
-2. `update.channel` from config, when it is `stable` or `main`. The
-   values `auto`, empty, and unknown fall through.
-3. The channel from the manifest. The source default is `main`.
+1. This install's own record, `update.installs.<sha16>.channel`, when it
+   names a valid channel.
+2. Otherwise the mechanism default: `main` for a `self` source install,
+   `stable` for an `electron-updater` bundle.
 
-A sealed tree never asks. Its steward owns versioning, and `hermes
-update` says so in plain words, with the correct steward command.
+A source install that asks for `nightly` tracks `main`, and the caller
+prints a note. Nightly builds are desktop release artifacts, and a git
+checkout tracks branches. The record is per install and never per home,
+because one `config.yaml` can serve a checkout, a Docker gateway, and
+the desktop app at once.
+
+An `external` install never asks. Its steward owns versioning,
+`--set-channel` refuses with the steward's name, and `hermes update`
+says so in plain words with the correct steward command.

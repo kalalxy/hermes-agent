@@ -53,9 +53,9 @@ command at `/usr/local/bin/hermes`, data still at `$HERMES_HOME`. The
 layout matches Claude Code and Codex CLI and keeps Docker bind-mounted
 volumes lean.
 
-The installer also writes the install manifest (`.hermes-install.json`)
-and the install stamp, so the new tree can tell its own story about
-where it came from.
+The installer writes the install stamp, so the new tree can tell its own
+story about where it came from. There is no second marker file: the
+stamp's `updateMechanism` is the only record of who owns updates.
 
 ## install.ps1 (Windows)
 

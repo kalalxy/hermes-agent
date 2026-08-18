@@ -57,7 +57,7 @@ As of this restack, the table pins these tools:
 | node | 26.7.0 | Official dist tarballs per target. |
 | npm | 12.0.2 | Extends node. Newer than the npm node bundles. |
 | uv | 0.12.3 | Carries the Python pin: 3.11.15. |
-| git | 2.53.0 | dugite-native on POSIX, PortableGit on Windows. |
+| git | 2.53.0 | Windows only: PortableGit, for the bash it ships. POSIX takes the machine's git. |
 | gh | 2.97.0 | GitHub CLI. |
 | ripgrep | 15.2.0 | |
 | camoufox | 152.0.4-beta.28 | Optional. Browser engine for the Camoufox tool. |
@@ -204,13 +204,28 @@ The assembler also owns per-tool env:
 ## The sealed-tree drift check
 
 A Git checkout provisions on demand. Drift there is a normal state that
-the next `hermes update` resolves.
+the next `hermes update` resolves, and raising would break the very run
+that fixes it. Checkouts are not checked.
 
 A sealed tree cannot self-heal. Its steward built the runtime tools as
 part of the artifact, so drift means the artifact was assembled against
-a different pin table than the code it ships. `require_current_runtimes`
-fails fast in that case: the boot path refuses to limp along with tools
-silently missing from PATH. The steward has to rebuild.
+a different pin table than the code it ships.
+
+The check runs at two moments, and it answers differently at each.
+
+| Moment | Caller | Answer |
+|---|---|---|
+| Artifact time | The docker build, the nix check, desktop payload staging | `require_current_runtimes` raises `StaleManagedRuntimes`. The steward rebuilds. |
+| Boot time | `_report_sealed_runtime_drift` in the boot path | Print the same message to stderr and continue. |
+
+Boot reports rather than refuses. A sealed gateway that boots on stale
+tools is degraded, but a gateway that refuses to boot over a tool
+version is down, remotely, with the fix out of that machine's own
+reach: only the steward can rebuild the artifact. So every boot of a
+drifted tree prints the steward message, which makes the drift
+impossible to miss, and the steward's own gate stays the wall. The
+message names the steward and lists each tool with its pinned and
+installed versions.
 
 ## Other consumers of the table
 
@@ -222,10 +237,13 @@ The pin table has four consumers, and they all read the same JSON:
   `extends` edges become real Nix dependencies, and a `bundle`
   derivation symlinks the tools into the layout the registry describes
   and writes `runtimes.json` with the registry's own code.
-- The Docker build. The runtime image's node no longer comes from a
-  `node:26` base stage. It comes from the pin table via the
-  provisioner. The base stage remains only as a build-time fallback
-  for platforms the table does not cover.
+- The Docker build. The runtime image's node comes from the pin table
+  through the provisioner. A `node:26` source stage is still declared,
+  as a build-time fallback for platforms the pin table does not cover,
+  and nothing copies from it into the runtime image today. The stage it
+  replaced is the reason the table exists: a separate `uv_source` stage
+  had drifted to uv 0.11.6 while the table said 0.12.3, which is the
+  two-authorities failure in one image.
 
 `HERMES_RUNTIME_DIR` is the packager's override. A packager builds one
 self-contained runtime dir (facts and bytes together) and points the

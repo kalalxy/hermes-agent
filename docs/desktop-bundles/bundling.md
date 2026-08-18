@@ -50,12 +50,28 @@ A complete payload contains:
 | Item | Contents |
 |---|---|
 | `manifest.json` | Schema version, tag, commit, platform, arch, build time. |
+| `runtimes.json` | The facts. One record per staged tool, each with the path to its binary, relative to the payload root. |
 | `repo/` | The plain source tree at the release tag, from `git archive`, without `.git`. It carries the prebuilt JS surfaces (ui-tui dist, dashboard `web_dist`) and the build stamp. |
-| `uv/` | The pinned static uv for this platform and arch. |
 | `python/` | A uv-managed CPython. Its own site-packages carries `hermes-bundle.pth` with RELATIVE paths to `repo/` and `site-packages/`, so the interpreter resolves the runtime wherever the app bundle sits. No venv, no `PYTHONPATH`. |
 | `site-packages/` | The full dependency tree from `uv.lock`, installed at build time with `pip install --target` on the payload interpreter. The backend runs directly from here. Nothing materializes at first launch. |
-| `node/` | The official node dist for this platform and arch. |
-| `git/` | PortableGit, Windows only. macOS and Linux use their system git. |
+| Store entries | One directory per managed tool, named `<tool>-<version>-<target>`: `uv`, `node`, `gh`, `ripgrep`, and `git` on Windows. The payload is its own tool store, so the names match the ones a source install writes into `~/.hermes/tools/`. |
+
+The staging script does not lay the tool trees out itself. It runs
+`python -m installation.provisioner --runtime-dir <payload> --target
+<target>`, the same engine a source install runs, and the provisioner
+writes both the store entries and `runtimes.json`. One engine, so a
+payload cannot be laid out differently from a source install.
+
+`runtimes.json` is the layout authority. Nothing reads a hardcoded path
+like `node/node.exe`: a hardcoded map here diverged silently when the
+store-entry naming landed, and every bundled build died on it. The arch
+audit resolves each binary through its fact, and so does the app.
+
+Git is on Windows only, and the payload follows the pin table rather
+than restating the rule. Windows needs the bash that ships inside
+PortableGit. On macOS and Linux `installation.git.git_path()` takes the
+machine's git when it clears the version floor, so those targets stage
+no git and the pin table records the reason.
 
 Payload staging stays dormant unless `HERMES_DESKTOP_VARIANT=bundled`.
 Without it, the script writes a stub manifest marked `external: true`,
@@ -85,10 +101,13 @@ The arch gate. Every staged binary must prove the target
 architecture. `uv --version` and `python -VV` print their build triple.
 Node reports `process.arch`. A mismatch fails the build, because a
 wrong-arch binary can run on the build host through emulation and ship
-broken. After provisioning, `assertPayloadArch` re-checks the staged
-files by header inspection (PE, Mach-O, or ELF), because the build host
-usually cannot execute what it staged. It also refuses a `system`
-fact in a sealed payload: a sealed artifact must carry its own tools.
+broken. After provisioning, `assertPayloadArch` re-checks every required
+tool (node, uv, git, gh, ripgrep) by header inspection (PE, Mach-O, or
+ELF), because the build host usually cannot execute what it staged. It
+resolves each binary through its fact in `runtimes.json`, and it refuses
+a fact that records an absolute path: an absolute path is a machine
+binary outside the payload, and a sealed artifact must carry its own
+tools.
 
 **The staging cache.** The `python/` and `site-packages/` stages
 dominate build time. Their content is a pure function of the target,

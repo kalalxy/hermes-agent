@@ -23,20 +23,27 @@ Every install of Hermes is a point on two axes.
 
 | Axis | Values | Who owns it |
 |---|---|---|
-| Tree kind | Git checkout, or sealed tree | `installation/tree.py` |
+| Update mechanism | `self`, `electron-updater`, `external` | The install stamp, read by `installation/tree.py` |
 | Runtime source | Managed tools, or system tools | `installation/registry.py` |
 
-**A Git checkout** has a `.git` directory. `hermes update` owns it. The
+**A `self` install** is a git checkout. `hermes update` owns it: the
 checkout pulls new code and then syncs its own environment.
 
-**A sealed tree** has no `.git` directory. Something external replaces it
-wholesale. The install stamp names that steward in its `distribution`
-field: `desktop-app`, `docker`, or `nix`. A sealed tree cannot provision
-itself. Its steward builds the runtime tools into the artifact at build
-time.
+**An `electron-updater` install** is a desktop bundle. It replaces its
+own artifact, runtime included, from a release feed.
 
-The update channel applies to Git checkouts only. Sealed trees version
-track through their stewards.
+**An `external` install** is a sealed tree whose steward replaces it
+wholesale. The stamp names that steward in its `distribution` field:
+`docker` or `nix`. A sealed tree cannot provision itself. Its steward
+builds the runtime tools into the artifact at build time.
+
+The stamp field is the only answer to "who updates this". An earlier
+design also kept a `.hermes-install.json` manifest with its own
+`installMode`, and the two records disagreed. The manifest is gone, and
+so is eject.
+
+Update channels apply wherever the mechanism is not `external`, and they
+are recorded per install rather than per home.
 
 ## Glossary
 
@@ -49,6 +56,6 @@ track through their stewards.
 | Sidecar | A managed tool binary (node, uv, git, gh, ripgrep, a browser engine) that ships beside the code instead of relying on a system copy. |
 | Install stamp | `install-stamp.json`. Build-time provenance baked into every packaged artifact. |
 | Steward | The system that replaces a sealed tree: the desktop app, Docker, or Nix. |
-| Channel | `main` (track the branch) or `stable` (track tagged releases) for Git installs. The desktop updater has its own `latest` and `light` feeds. |
+| Channel | Which releases one install tracks: `main`, `stable`, or `nightly`. Recorded per install under `update.installs.<sha16>`. The desktop updater publishes to its own `latest`, `nightly`, `light`, and `light-nightly` feeds. |
 | Provisioner | `installation/provisioner.py`. The one engine that downloads, verifies, and publishes managed tools. |
 | Payload | The `agent-payload/` directory inside a bundled desktop app. It holds the whole agent runtime. |

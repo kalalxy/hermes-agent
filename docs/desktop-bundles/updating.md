@@ -1,8 +1,9 @@
 # Updating Hermes
 
 This document explains how an install of Hermes updates itself. The
-answer depends on the tree kind: a Git checkout updates through
-`hermes update`, and a sealed tree updates through its steward.
+install stamp names the mechanism: a git checkout updates through
+`hermes update`, a desktop bundle swaps itself, and a sealed tree
+updates through its steward.
 
 ## Who updates what
 
@@ -14,42 +15,67 @@ answer depends on the tree kind: a Git checkout updates through
 | Docker | Pull a new image |
 | Nix | Update the flake and rebuild |
 
-`hermes update` refuses to run in a sealed tree. The refusal text names
-the steward and the correct command. The uninstaller behaves the same
-way. These refusals are not cosmetic: a sealed tree cannot provision
-itself, and the code must not pretend it can.
+## What decides the update path
 
-## The install manifest
+The install stamp decides. Its required `updateMechanism` field names
+who owns updates for this install, and every caller asks that one field.
 
-`.hermes-install.json` sits next to the managed checkout. It describes
-the running code, not `$HERMES_HOME`. Two installs that share one data
-directory cannot overwrite each other's marker.
-
-| Field | Values | Meaning |
+| Mechanism | Who updates | Channel means |
 |---|---|---|
-| `installMode` | `source`, `bundled` | Who owns updates. Missing means source. |
-| `channel` | `main`, `stable` | Which releases to track. Source only. |
-| `manageStyle` | `adopted`, `ejected` | How the install reached its mode. Optional. |
+| `self` | `hermes update` pulls the git checkout | Which git ref: main, or the newest release tag |
+| `electron-updater` | The in-app updater swaps the whole artifact | Which feed: `latest.yml` or `nightly.yml` |
+| `external` | A steward replaces the tree: Docker, Nix | Nothing. Channels do not apply |
 
-A bundled install is always stable. The desktop app rebuilds the
-checkout from tagged release payloads, so a config override cannot
-change what the installer ships. To change it, eject first.
+An earlier design kept a second marker file, `.hermes-install.json`,
+with its own `installMode` field. Two records answered one question, and
+they disagreed: that is the sealed-refusal bug. The manifest is gone.
+The stamp is the only answer, `installation/tree.py` is the only reader,
+and there is no eject: `hermes update --eject` and `manageStyle` no
+longer exist.
 
-An eject is permanent. `hermes update --eject` converts the checkout to
-source mode and records `manageStyle: ejected`. The desktop app keeps
-updating itself, but the agent checkout is yours. The eject marker must
-survive vocabulary changes in both directions, so the reader keeps any
-style value that contains the word "eject".
+`hermes update` refuses to run where the mechanism is not `self`. The
+refusal text names the steward and the correct command. The uninstaller
+behaves the same way. These refusals are not cosmetic: a sealed tree
+cannot provision itself, and the code must not pretend it can.
 
-## Channels for Git installs
+## Channels are per install, never per home
 
-`update.channel` in `config.yaml` selects what `hermes update` tracks:
+`hermes_cli/update_channel.py` records a channel for one install:
 
-| Value | Behavior |
-|---|---|
-| `auto` (default) | Use the install manifest. Same as `main` for every pre-existing install. |
-| `main` | `git pull` of the main branch. |
-| `stable` | Check out the latest tagged release, not main. |
+```yaml
+update:
+  installs:
+    a4f3b2c1d0e9f8a7:
+      path: /home/u/.hermes/hermes-agent
+      channel: nightly
+```
+
+One `config.yaml` serves many installs. A host checkout, a Docker
+gateway, and the desktop app can bind-mount one `~/.hermes`, so a
+home-global `update.channel` key is unsafe and does not exist. Selecting
+nightly for a dev checkout must not move the desktop app's feed.
+
+The install id is the sha16 of the canonical install-root path, the same
+key that names the `installs/<sha16>/` state folder. It is path-derived
+on purpose: an electron-updater update writes new stamp bytes at the
+same path, and the channel opt-in must survive that.
+
+| Channel | Effect on a `self` install | Effect on a bundle |
+|---|---|---|
+| `main` | `git pull` of the main branch | Not applicable |
+| `stable` | Check out the newest final release tag | The `latest.yml` feed |
+| `nightly` | Normalizes to `main`, and the caller prints a note | The `nightly.yml` feed |
+
+An unconfigured install falls to its mechanism default: `main` for a
+source checkout, `stable` for a bundle. Nightly builds are release
+artifacts, so a git checkout asking for nightly tracks main instead.
+`hermes update --set-channel <x>` writes the record from inside the
+install, so a user never types a sha. `--install-id` prints it.
+
+Doctor sweeps the records for three staleness kinds: `missing` (nothing
+at the recorded path), `replaced` (the path exists but keys to a
+different sha16), and `unclaimed` (no live `install.json` for that
+sha16). Each one offers garbage collection rather than deleting.
 
 An explicit `--branch` flag on the command line always wins. If a tag
 silently overrode that flag, the bug class that `--branch` prevents
@@ -210,17 +236,17 @@ release workflow attaches the feed files (`latest*.yml` for Hermes,
 app carries its new runtime in its own resources, so there is no
 post-update install step at all.
 
-The gate is `shouldUseAppUpdater`: the stamp payload must be `bundled`
-or `light`, and the app must be packaged. Bootstrap artifacts keep the
-git path. An eject replaces the whole app with a source-built external
-one, so no "ejected embedded install" state exists to gate on.
+The gate is `shouldUseAppUpdater`: the stamp mechanism must be
+`electron-updater`, and the app must be packaged. Bootstrap artifacts
+keep the git path. There is no eject, so no "ejected embedded install"
+state exists to gate on.
 
 The update-check result maps onto the existing renderer shape, so the
-UI needs no new states. Bundled installs report channel `stable`. Every
-renderer surface can pick release vocabulary without probing the
-install manifest. The semver verdict comes from electron-updater
-itself, because a plain string compare offers a locally-newer dev
-build a downgrade.
+UI needs no new states. A bundle without a channel record reports
+`stable`. Every renderer surface can pick release vocabulary from the
+stamp and the channel record, with no second marker file to consult.
+The semver verdict comes from electron-updater itself, because a plain
+string compare offers a locally-newer dev build a downgrade.
 
 The Linux relaunch path is deliberately honest. After
 `hermes update` plus a desktop rebuild, the app only relaunches into
