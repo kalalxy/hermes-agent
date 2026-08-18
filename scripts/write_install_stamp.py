@@ -210,10 +210,15 @@ def build_stamp(
         )
     payload = variant or "bootstrap"
     tag = os.environ.get("HERMES_PAYLOAD_TAG") or None
-    if payload != "bootstrap" and not (tag and re.match(r"^v(0|[1-9]\d{0,2})\.\d+\.\d+$", tag)):
+    # Stable (vX.Y.Z) and nightly (vX.Y.0-nightly.YYYYMMDD) tags are both
+    # release-feed keys; anything else cannot update itself and refuses.
+    _release_tag = re.compile(
+        r"^v(0|[1-9]\d{0,2})\.\d+\.\d+(?:-nightly\.20\d{6})?$"
+    )
+    if payload != "bootstrap" and not (tag and _release_tag.match(tag)):
         raise SystemExit(
             f"write_install_stamp: HERMES_DESKTOP_VARIANT={payload} requires "
-            f"HERMES_PAYLOAD_TAG=vX.Y.Z (got {tag!r})"
+            f"HERMES_PAYLOAD_TAG=vX.Y.Z or vX.Y.0-nightly.YYYYMMDD (got {tag!r})"
         )
 
     return {
