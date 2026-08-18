@@ -649,9 +649,13 @@ def _looks_like_string_literal(line: str, match: "re.Match") -> bool:
 # Mode-extraction for open()/os.fdopen() calls: captures the positional (or
 # ``mode=`` keyword) mode string so the encoding-direction rules can tell a
 # read from a write. ``open(path, encoding=...)`` with no mode at all is a
-# read — that case is handled by the callers, not this regex.
+# read — that case is handled by the callers, not this regex. The capture
+# is constrained to Python file-mode characters so a nested-call first
+# argument (``open(os.path.join(root, "x.json"), ...)``) can't donate its
+# string literal as a phantom mode — that exact line in _startup_fast.py
+# false-positived the write rule during the first live sweep.
 _OPEN_MODE_RE = re.compile(
-    r"""\b(?:open|fdopen)\s*\(\s*[^,)]+\s*,\s*(?:mode\s*=\s*)?['"]([^'"]*)['"]"""
+    r"""\b(?:open|fdopen)\s*\([^)]*?,\s*(?:mode\s*=\s*)?['"]([rwaxbtU+]{1,3})['"]"""
 )
 
 

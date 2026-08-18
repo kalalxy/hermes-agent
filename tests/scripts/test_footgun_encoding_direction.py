@@ -209,6 +209,17 @@ class TestWriteRuleNegatives:
         line = "    codec = 'utf-8-sig'"
         assert not _scan_line(linter, line, WRITE_RULE)
 
+    def test_does_not_flag_nested_call_first_arg(self, linter):
+        # Regression: the first live sweep false-positived this line from
+        # _startup_fast.py — the old mode regex swallowed the nested
+        # ``join(`` paren and captured "install-stamp.json" as the mode
+        # (its 'a' made it look write-shaped). Omitted mode = read.
+        line = (
+            '    with open(os.path.join(root, "install-stamp.json"), '
+            'encoding="utf-8-sig") as handle:'
+        )
+        assert not _scan_line(linter, line, WRITE_RULE)
+
     def test_does_not_flag_suppressed_line(self, linter):
         line = (
             "    path.write_text(data, encoding='utf-8-sig')"
