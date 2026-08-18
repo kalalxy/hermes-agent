@@ -892,46 +892,6 @@ def _security_overrides_file() -> Optional[Path]:
     )
 
 
-def _pip_reassert_overrides(
-    pip_cmd: list[str],
-    target_args: list[str],
-    *,
-    timeout: int,
-):
-    """Install the overrides again with ``--no-deps`` after pip runs.
-
-    pip has no ``--overrides`` option. A ``--constraint`` file does keep the
-    pinned package, but pip then moves the backend back instead
-    (alibabacloud-tea-openapi 0.4.5 to 0.3.16, an sdist from two years ago).
-    A second pass with ``--no-deps`` prevents this. The pass changes only the
-    overridden package and keeps each other package that pip resolved.
-
-    Returns the failed ``CompletedProcess`` if the second pass gave an error.
-    Returns None if the pass succeeded, or if there was no work. The caller
-    then keeps its own result. This function reports a failure, because a
-    downgraded security package is the fault that it must prevent.
-    """
-    overrides = _security_overrides()
-    if not overrides:
-        return None
-    try:
-        r = _run(
-            pip_cmd + ["install", "--no-deps", *target_args, *overrides],
-            timeout=timeout,
-        )
-    except Exception as e:  # pragma: no cover - defensive
-        logger.warning("pip override re-assert failed to run: %s", e)
-        return None
-    if r.returncode != 0:
-        logger.warning(
-            "pip override re-assert failed (rc=%d); a security-pinned package "
-            "may have been downgraded by this install: %s",
-            r.returncode, (r.stderr or "").strip()[:400],
-        )
-        return r
-    return None
-
-
 def _uv_sync_extra(feature: str) -> Optional[_InstallResult]:
     """Install the extra of ``feature`` with ``uv sync``.
 
@@ -967,9 +927,9 @@ def _uv_sync_extra(feature: str) -> Optional[_InstallResult]:
     try:
         from hermes_cli.managed_uv import resolve_uv
 
-        uv_bin = resolve_uv() or shutil.which("uv")
+        uv_bin = resolve_uv()
     except Exception:
-        uv_bin = shutil.which("uv")
+        uv_bin = None
     if not uv_bin:
         return None
 
@@ -1030,14 +990,10 @@ def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _Install
 
     Lazy-install policy carried into the ladder as arguments (this used
     to be the second of three divergent copies of the mechanics):
-
-    * ``resolve_uv()`` and never ``ensure_uv()`` — this runs mid-turn to
-      satisfy an optional import, and downloading uv as a side effect of
-      that is a far bigger action than the caller asked for. The pip
-      tier covers the no-uv case.
-    * a uv RESOLVER failure is final: falling through to pip would
-      discard uv policy such as ``exclude-newer`` and could install a
-      release the project quarantined.
+    ``resolve_uv()`` and never ``ensure_uv()``. This runs mid-turn to
+    satisfy an optional import, and downloading uv as a side effect of
+    that is a far bigger action than the caller asked for. An
+    unprovisioned tree fails with the provisioner hint instead.
     """
     if not specs:
         return _InstallResult(True, "", "")
@@ -1076,17 +1032,7 @@ def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _Install
             overrides=overrides,
             env=env,
             creationflags=windows_hide_flags(),
-            uv_resolver_failure_is_final=True,
         )
-        if result.ok and result.tier == "pip":
-            # pip has no --overrides: it may have downgraded a security-
-            # pinned package the backend's metadata caps. Re-assert the
-            # floor with --no-deps — rewrites only the overridden packages,
-            # keeps the backend at the version pip resolved.
-            target_args = [] if target is None else ["--target", str(target)]
-            _pip_reassert_overrides(
-                [sys.executable, "-m", "pip"], target_args, timeout=timeout
-            )
         if result.ok and target is not None:
             _activate_target_on_syspath(target)
         return _InstallResult(result.ok, result.stdout, result.stderr)

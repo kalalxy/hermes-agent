@@ -453,7 +453,11 @@ class TestUvSyncTier:
         monkeypatch.setattr(
             tree_mod, "runtime_tree", lambda _root: object(), raising=True
         )
-        monkeypatch.setattr(ld.shutil, "which", lambda _n: "/usr/bin/uv")
+        # The uv-sync tier uses the MANAGED uv only (no PATH lookup):
+        # a PATH uv resolves without the store facts behind it.
+        monkeypatch.setattr(
+            "hermes_cli.managed_uv.resolve_uv", lambda: "/usr/bin/uv"
+        )
 
         seen = {}
 

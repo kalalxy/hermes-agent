@@ -801,14 +801,9 @@ def _pip_install(
     """Install Python packages from a post-setup hook.
 
     A thin policy wrapper over ``installation.pip_ladder`` (the ONE
-    uv → pip → ensurepip ladder; this used to be the first of its three
-    divergent copies). Setup-hook policy:
-
-    * ``ensure_uv()``, not a bare lookup — this runs during setup, where
-      downloading uv is in scope, and tier 2 is a pip that the Windows
-      installer's ``uv venv`` does not seed.
-    * uv failures fall through to pip: any tier that works is a win here,
-      unlike lazy installs where a uv resolver verdict is authoritative.
+    install path; this used to be the first of its three divergent
+    copies). Setup-hook policy: ``ensure_uv()``, not a bare lookup. This
+    runs during setup, where downloading uv is in scope.
 
     Returns a CompletedProcess-shaped result (``.returncode``/``.stdout``/
     ``.stderr``) so existing callers keep working.
@@ -824,7 +819,6 @@ def _pip_install(
         creationflags=_post_setup_no_window_flags(
             streams_to_console=not capture_output
         ),
-        uv_resolver_failure_is_final=False,
     )
 
 

@@ -7732,7 +7732,14 @@ def _recover_lazy_refresh_marker_locked() -> None:
         "⚠ A previous lazy-backend refresh may have left the venv unhealthy — "
         "running import-based package repair..."
     )
-    install_prefix, install_env = _default_venv_install_target()
+    target = _default_venv_install_target()
+    if target is None:
+        print(
+            "  ⚠ No managed uv — cannot repair packages. "
+            "Run: python -m installation.provisioner"
+        )
+        return
+    install_prefix, install_env = target
     status = _repair_venv_via_import_probes(install_prefix, env=install_env)
     if status in ("healthy", "repaired"):
         _clear_lazy_refresh_incomplete_marker()
@@ -7776,42 +7783,34 @@ def _recover_core_update_marker_locked() -> None:
     # must NEVER clear this core marker on its own (#58004 review).
     self_locked = _windows_running_hermes_launcher_locked()
     if self_locked:
-        install_prefix, install_env = _default_venv_install_target()
-        print(
-            "  → Running from hermes.exe; applying package-only first aid, "
-            "then quarantined full reinstall (core marker stays until that "
-            "succeeds)..."
-        )
-        _repair_venv_via_import_probes(install_prefix, env=install_env)
+        target = _default_venv_install_target()
+        if target is not None:
+            install_prefix, install_env = target
+            print(
+                "  → Running from hermes.exe; applying package-only first aid, "
+                "then quarantined full reinstall (core marker stays until that "
+                "succeeds)..."
+            )
+            _repair_venv_via_import_probes(install_prefix, env=install_env)
 
     try:
         from hermes_cli.managed_uv import ensure_uv
 
-        # Always bootstrap pip first: a killed install can leave the venv with
-        # no pip module at all, and uv may also be gone. ensurepip restores a
-        # known-good pip so at least the plain-pip path below can proceed.
-        try:
-            subprocess.run(
-                [sys.executable, "-m", "ensurepip", "--upgrade", "--default-pip"],
-                cwd=PROJECT_ROOT,
-                capture_output=True,
-            )
-        except Exception as exc:
-            logger.debug("ensurepip during install recovery failed: %s", exc)
-
         uv_bin = ensure_uv()
-        if uv_bin:
-            uv_env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
-            _install_python_dependencies_with_optional_fallback(
-                [uv_bin, "pip"],
-                env=uv_env,
-                group="all",
+        if not uv_bin:
+            # There is no pip tier: pip resolves without uv policy
+            # (exclude-newer, the [tool.uv] overrides), so it can install a
+            # release the project quarantined. An unprovisioned tree is a
+            # provisioning fault.
+            raise RuntimeError(
+                "no managed uv found. Run: python -m installation.provisioner"
             )
-        else:
-            _install_python_dependencies_with_optional_fallback(
-                [sys.executable, "-m", "pip"],
-                group="all",
-            )
+        uv_env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
+        _install_python_dependencies_with_optional_fallback(
+            [uv_bin, "pip"],
+            env=uv_env,
+            group="all",
+        )
 
         _clear_update_incomplete_marker()
         print("✓ Dependency installation recovered — your install is healthy again.")
@@ -7827,14 +7826,13 @@ def _recover_core_update_marker_locked() -> None:
                 "different terminal, then run:"
             )
             print(f'    cd /d "{PROJECT_ROOT}"')
-            print(
-                f'    "{sys.executable}" -m pip install -e ".[all]"'
-            )
+            print(f'    "{sys.executable}" -m installation.provisioner')
+            print('    uv pip install -e ".[all]"')
         else:
             print("  Recover manually with:")
             print(f"    cd {PROJECT_ROOT}")
-            print(f"    {sys.executable} -m ensurepip --upgrade")
-            print(f"    {sys.executable} -m pip install -e '.[all]'")
+            print(f"    {sys.executable} -m installation.provisioner")
+            print("    uv pip install -e '.[all]'")
 
 
 def _windows_running_hermes_launcher_locked() -> bool:
@@ -7872,18 +7870,23 @@ def _windows_running_hermes_launcher_locked() -> bool:
     return False
 
 
-def _default_venv_install_target() -> tuple[list[str], dict[str, str] | None]:
-    """Return ``(install_cmd_prefix, env)`` for the project venv when possible."""
+def _default_venv_install_target() -> tuple[list[str], dict[str, str] | None] | None:
+    """Return ``(install_cmd_prefix, env)`` for the project venv.
+
+    Returns None when there is no managed uv. There is no pip tier: pip
+    resolves without uv policy, so an unprovisioned tree must report a
+    provisioning fault instead of installing a different dependency set.
+    """
     try:
         from hermes_cli.managed_uv import ensure_uv
 
         uv_bin = ensure_uv()
     except Exception:
         uv_bin = None
-    if uv_bin:
-        env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
-        return [uv_bin, "pip"], env
-    return [sys.executable, "-m", "pip"], None
+    if not uv_bin:
+        return None
+    env = {**os.environ, "VIRTUAL_ENV": str(PROJECT_ROOT / "venv")}
+    return [uv_bin, "pip"], env
 
 
 def _run_install_with_heartbeat(

@@ -65,26 +65,26 @@ def mock_args():
 
 
 # ---------------------------------------------------------------------------
-# Managed-uv compatibility for tests that patch shutil.which
+# Managed-uv stub
 # ---------------------------------------------------------------------------
-# The production code now uses ``ensure_uv()`` / ``update_managed_uv()``
-# instead of ``shutil.which("uv")``.  Many tests in this file patch
-# ``shutil.which`` to control whether uv is "available" — these autouse
-# fixtures make the managed_uv functions delegate to the patched
-# ``shutil.which`` so the existing test setup keeps working without
-# per-test changes.
+# The managed uv comes from the store facts, NOT from PATH, so it must not
+# follow the ``shutil.which`` patches these tests use to control npm and
+# other PATH tools. There is no pip tier any more: a test that leaves the
+# managed uv unresolved gets the provisioner error, not a silent pip
+# install. Tests that want the unprovisioned case patch
+# ``hermes_cli.managed_uv.ensure_uv`` themselves.
+FAKE_MANAGED_UV = "/managed/bin/uv"
+
+
 @pytest.fixture(autouse=True)
 def _patch_managed_uv(request):
-    """Make managed_uv helpers follow shutil.which mocking in tests."""
-    import shutil
+    """Resolve a managed uv without touching PATH."""
 
-    # resolve_uv delegates to shutil.which("uv") so that test patches
-    # on shutil.which flow through naturally.
     def _fake_resolve_uv():
-        return shutil.which("uv")
+        return FAKE_MANAGED_UV
 
     def _fake_ensure_uv(**_kwargs):
-        return shutil.which("uv")
+        return FAKE_MANAGED_UV
 
     def _fake_update_managed_uv(**_kwargs):
         return None  # never actually self-update in tests
