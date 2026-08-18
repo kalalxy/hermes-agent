@@ -42,9 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          # The changelog walks commits since the previous nightly tag and
-          # the tag-math reads the full tag list — both need real history.
+          # The changelog walks commits since the previous nightly tag
           fetch-depth: 0
+          # the tag math reads the full tag list
           fetch-tags: true
 
       - name: Tag and publish
