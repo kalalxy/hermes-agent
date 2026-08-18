@@ -366,7 +366,7 @@ def audit(direction: str, peer: str, task_id: str, summary: str) -> None:
         }
         path = _audit_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8-sig") as fh:
+        with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception:
         logger.debug("A2A: audit write failed", exc_info=True)

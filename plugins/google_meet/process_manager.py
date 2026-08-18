@@ -291,7 +291,7 @@ def enqueue_say(text: str) -> Dict[str, Any]:
 
     queue_path = out_dir / "say_queue.jsonl"
     entry = {"id": uuid.uuid4().hex[:12], "text": text}
-    with queue_path.open("a", encoding="utf-8-sig") as f:
+    with queue_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
     return {
         "ok": True,

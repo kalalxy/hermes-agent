@@ -153,7 +153,7 @@ class NodeServer:
                     queue = Path(active["out_dir"]) / "say_queue.jsonl"
                     try:
                         queue.parent.mkdir(parents=True, exist_ok=True)
-                        with queue.open("a", encoding="utf-8-sig") as fh:
+                        with queue.open("a", encoding="utf-8") as fh:
                             fh.write(json.dumps({"text": text, "ts": time.time()}) + "\n")
                         enqueued = True
                     except OSError:

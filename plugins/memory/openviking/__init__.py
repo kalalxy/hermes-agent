@@ -3220,7 +3220,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         lock_file = None
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            lock_file = path.open("a+", encoding="utf-8-sig")
+            lock_file = path.open("a+", encoding="utf-8")
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             self._run_lock_path = path
             self._run_lock_file = lock_file
@@ -3281,7 +3281,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         lock_file = None
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            lock_file = path.open("a+", encoding="utf-8-sig")
+            lock_file = path.open("a+", encoding="utf-8")
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             return True, lock_file
         except OSError as e:

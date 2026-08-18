@@ -807,7 +807,7 @@ def persist_message(context_id: str, role: str, text: str, task_id: str = "") ->
         d = _conv_dir()
         d.mkdir(parents=True, exist_ok=True)
         rec = {"ts": time.time(), "role": role, "text": text, "task_id": task_id}
-        with (d / f"{_safe_name(context_id)}.jsonl").open("a", encoding="utf-8-sig") as fh:
+        with (d / f"{_safe_name(context_id)}.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception:
         pass
