@@ -158,7 +158,6 @@ def test_make_tui_argv_omits_workspace_when_tui_has_own_lockfile(
     # Parent also has lockfile (but _workspace_root prefers tui_dir's own)
     (tmp_path / "package-lock.json").write_text("{}")
 
-    monkeypatch.delenv("TERMUX_VERSION", raising=False)
     monkeypatch.setenv("PREFIX", "/usr")
     monkeypatch.setattr(main_mod, "_tui_need_npm_install", lambda _root: True)
     monkeypatch.setattr(main_mod.shutil, "which", lambda name: f"/bin/{name}")

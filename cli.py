@@ -1003,59 +1003,6 @@ def _mark_tui_input_modes_active() -> None:
     _tui_input_modes_active = True
 
 
-def _prepare_deferred_agent_startup() -> None:
-    """Run Termux-deferred agent discovery before the first real agent turn."""
-    global _deferred_agent_startup_done
-    if _deferred_agent_startup_done:
-        return
-    if os.environ.get("HERMES_DEFER_AGENT_STARTUP") != "1":
-        return
-    _deferred_agent_startup_done = True
-    _accept_hooks = os.environ.get("HERMES_ACCEPT_HOOKS", "").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    try:
-        from hermes_cli.plugins import discover_plugins
-
-        discover_plugins()
-    except Exception:
-        logger.warning(
-            "plugin discovery failed at deferred CLI startup",
-            exc_info=True,
-        )
-    try:
-        from hermes_cli.mcp_startup import start_background_mcp_discovery
-
-        start_background_mcp_discovery(
-            logger=logger,
-            thread_name="termux-cli-mcp-discovery",
-        )
-    except Exception:
-        logger.debug(
-            "MCP tool discovery failed at deferred CLI startup",
-            exc_info=True,
-        )
-    try:
-        from agent.shell_hooks import register_from_config
-        from hermes_cli.config import load_config
-
-        _hooks_cfg = load_config()
-        register_from_config(_hooks_cfg, accept_hooks=_accept_hooks)
-
-        from agent.outbound_webhooks import (
-            register_from_config as register_outbound_webhooks,
-        )
-
-        register_outbound_webhooks(_hooks_cfg)
-    except Exception:
-        logger.debug(
-            "shell-hook registration failed at deferred CLI startup",
-            exc_info=True,
-        )
-
 def _arm_exit_watchdog(timeout_s: float | None = None) -> None:
     """Guarantee the process actually exits once shutdown has begun.
 
@@ -3362,33 +3309,14 @@ _IMAGE_EXTENSIONS = frozenset({
 })
 
 
-from hermes_constants import is_termux as _is_termux_environment
-
-
-def _termux_example_image_path(filename: str = "cat.png") -> str:
-    """Return a realistic example media path for the current Termux setup."""
-    candidates = [
-        os.path.expanduser("~/storage/shared"),
-        "/sdcard",
-        "/storage/emulated/0",
-        "/storage/self/primary",
-    ]
-    # Termux/Android roots are POSIX paths — join with literal forward
-    # slashes so the hint stays correct even when this renders on Windows.
-    for root in candidates:
-        if os.path.isdir(root):
-            return f"{root}/Pictures/{filename}"
-    return f"~/storage/shared/Pictures/{filename}"
-
-
 def _split_path_input(raw: str) -> tuple[str, str]:
     r"""Split a leading file path token from trailing free-form text.
 
     Supports quoted paths and backslash-escaped spaces so callers can accept
     inputs like:
       /tmp/pic.png describe this
-      ~/storage/shared/My\ Photos/cat.png what is this?
-      "/storage/emulated/0/DCIM/Camera/cat 1.png" summarize
+      ~/Pictures/My\ Photos/cat.png what is this?
+      "/home/me/DCIM/Camera/cat 1.png" summarize
     """
     raw = str(raw or "").strip()
     if not raw:
@@ -3502,7 +3430,7 @@ def _detect_file_drop(user_input: str) -> "dict | None":
     """Detect if *user_input* starts with a real local file path.
 
     This catches dragged/pasted paths before they are mistaken for slash
-    commands, and also supports Termux-friendly paths like ``~/storage/...``.
+    commands.
 
     Returns a dict on match::
 
@@ -3573,8 +3501,8 @@ def _detect_file_drop(user_input: str) -> "dict | None":
 def _format_image_attachment_badges(attached_images: list[Path], image_counter: int, width: int | None = None) -> str:
     """Format the attached-image badge row for the interactive CLI.
 
-    Narrow terminals such as Termux should get a compact summary that fits on a
-    single row, while wider terminals can show the classic per-image badges.
+    Narrow terminals should get a compact summary that fits on a single row,
+    while wider terminals can show the classic per-image badges.
     """
     if not attached_images:
         return ""
@@ -4162,12 +4090,7 @@ def _build_compact_banner() -> str:
         line1 = f"{agent_name} - AI Agent Framework"
         tiny_line = agent_name
 
-    if os.environ.get("HERMES_FAST_STARTUP_BANNER") == "1":
-        from hermes_cli import __version__ as _version
-
-        version_line = f"Hermes Agent v{_version}"
-    else:
-        version_line = format_banner_version_label()
+    version_line = format_banner_version_label()
 
     w = min(shutil.get_terminal_size().columns - 2, 88)
     if w < 30:
@@ -5842,7 +5765,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         """Return the live prompt_toolkit width, falling back to ``shutil``.
 
         The TUI layout can be narrower than ``shutil.get_terminal_size()`` reports,
-        especially on Termux/mobile shells, so prefer prompt_toolkit's width whenever
+        especially on narrow mobile shells, so prefer prompt_toolkit's width whenever
         an app is active.
         """
         try:
@@ -7789,12 +7712,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 except Exception:
                     logger.debug("banner snapshot save failed", exc_info=True)
         
-        # Tool discovery is intentionally deferred on the Termux bare prompt
-        # path; availability warnings are shown once tools are initialized.
         # On the snapshot fast path (warm launch), the check walks every
         # check_fn (~180ms) — run it in the background refresh thread instead
         # and let its output land above the prompt (patch_stdout-safe).
-        if os.environ.get("HERMES_DEFER_AGENT_STARTUP") != "1":
+        if True:
             if getattr(self, "_defer_tool_warnings", False):
                 threading.Thread(
                     target=self._show_tool_availability_warnings,
@@ -8371,13 +8292,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
     
     def _show_status(self):
         """Show compact startup status line."""
-        # Avoid pulling the full tool registry into the bare Termux prompt path.
-        if os.environ.get("HERMES_DEFER_AGENT_STARTUP") == "1":
-            tool_status = "tools deferred"
-        else:
-            tools = get_tool_definitions(enabled_toolsets=self.enabled_toolsets, quiet_mode=True)
-            tool_count = len(tools) if tools else 0
-            tool_status = f"{tool_count} tools"
+        tools = get_tool_definitions(enabled_toolsets=self.enabled_toolsets, quiet_mode=True)
+        tool_count = len(tools) if tools else 0
+        tool_status = f"{tool_count} tools"
 
         # Format model name (shorten if needed)
         model_short = self.model.split("/")[-1] if "/" in self.model else self.model
@@ -8535,10 +8452,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         _cprint(f"\n  {_DIM}Tip: Just type your message to chat with Hermes!{_RST}")
         _cprint(f"  {_DIM}Multi-line: Alt+Enter for a new line{_RST}")
         _cprint(f"  {_DIM}Draft editor: Ctrl+G (Alt+G in VSCode/Cursor){_RST}")
-        if _is_termux_environment():
-            _cprint(f"  {_DIM}Attach image: /image {_termux_example_image_path()} or start your prompt with a local image path{_RST}\n")
-        else:
-            _cprint(f"  {_DIM}Paste image: Alt+V (or /paste){_RST}\n")
+        _cprint(f"  {_DIM}Paste image: Alt+V (or /paste){_RST}\n")
     
     def show_tools(self):
         """Display available tools with kawaii ASCII art."""
@@ -16053,9 +15967,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         # (~0.6s, deferred until client construction). Python's import lock
         # makes this safe: if the user submits before the warm finishes, the
         # main thread simply blocks on the remaining import work instead of
-        # redoing it. Skipped when agent startup is explicitly deferred
-        # (Termux) — that path defers heavy work on purpose.
-        if os.environ.get("HERMES_DEFER_AGENT_STARTUP") != "1":
+        # redoing it.
+        if True:
             def _prewarm_agent_runtime() -> None:
                 try:
                     import run_agent  # noqa: F401  (imports model_tools + tool registry)
@@ -16243,11 +16156,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         self._voice_last_tts_text = ""  # most recently spoken TTS text (echo guard, #75780)
         self._voice_barge_phase = None  # "generation" or "playback" phase of the last barge trip
 
-        if os.environ.get("HERMES_DEFER_AGENT_STARTUP") != "1":
-            self._install_tool_callbacks()
+        self._install_tool_callbacks()
 
-        if os.environ.get("HERMES_DEFER_AGENT_STARTUP") != "1":
-            self._ensure_tirith_security()
+        self._ensure_tirith_security()
         
         # Key bindings for the input area
         kb = KeyBindings()
@@ -19131,7 +19042,7 @@ def main(
         python cli.py --toolsets web,terminal    # Use specific toolsets
         python cli.py --skills hermes-agent-dev,github-auth
         python cli.py -q "What is Python?"       # Single query mode
-        python cli.py -q "Describe this" --image ~/storage/shared/Pictures/cat.png
+        python cli.py -q "Describe this" --image ~/Pictures/cat.png
         python cli.py --list-tools               # List tools and exit
         python cli.py --resume 20260225_143052_a1b2c3  # Resume session
         python cli.py -w                         # Start in isolated git worktree

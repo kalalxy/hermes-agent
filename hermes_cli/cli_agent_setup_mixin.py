@@ -338,7 +338,7 @@ class CLIAgentSetupMixin:
         Returns:
             bool: True if successful, False otherwise
         """
-        from cli import AIAgent, ChatConsole, _DIM, _RST, _accent_hex, _cprint, _prepare_deferred_agent_startup, logger
+        from cli import AIAgent, ChatConsole, _DIM, _RST, _accent_hex, _cprint, logger
         if self.agent is not None:
             return True
 
@@ -347,7 +347,6 @@ class CLIAgentSetupMixin:
         # self.system_prompt below. No-op when nothing was requested.
         self.finalize_preloaded_skills()
 
-        _prepare_deferred_agent_startup()
         self._install_tool_callbacks()
         self._ensure_tirith_security()
 

@@ -679,12 +679,6 @@ class TestCmdUpdateZipBranchRefusal:
         assert "Downloading latest version" not in out
 
 
-def test_is_termux_env_true_for_termux_prefix():
-    from hermes_cli import main as hm
-
-    assert hm._is_termux_env({"PREFIX": "/data/data/com.termux/files/usr"}) is True
-
-
 def test_load_installable_optional_extras_supports_named_group(tmp_path, monkeypatch):
     from hermes_cli import main as hm
 
