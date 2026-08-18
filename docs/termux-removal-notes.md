@@ -81,7 +81,8 @@ module when the frozen surface is next regenerated.
 
 A Termux package is possible again. It must not return as a second
 install lane inside this repository. These are the parts that a port
-needs.
+needs. Tracking issue: ethernet8023/hermes-agent#7 (fork-local until
+this branch merges upstream).
 
 | Part | What it needs |
 |---|---|
