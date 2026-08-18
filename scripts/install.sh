@@ -1370,6 +1370,16 @@ EOF
     fi
 
     log_success "Repository ready"
+
+    # The installer owns this checkout: record `updateMechanism: self` in
+    # the stamp so the stamp-pure ladder (installation/tree.py) classifies
+    # it as managed. Keep an existing stamp — re-running the installer on
+    # an already-stamped install must not clobber richer provenance.
+    if [ ! -f "$INSTALL_DIR/install-stamp.json" ]; then
+        printf '{\n  "schemaVersion": 2,\n  "updateMechanism": "self",\n  "source": "installer"\n}\n' \
+            > "$INSTALL_DIR/install-stamp.json"
+        log_info "Wrote install stamp (updateMechanism: self)"
+    fi
 }
 
 setup_venv() {

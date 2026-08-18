@@ -36,6 +36,7 @@ def test_stamp_version_info_reads_nix_stamp(tmp_path, monkeypatch):
         "dirty": False,
         "source": "nix",
         "distribution": "nix",
+        "updateMechanism": "external",
     }
     stamp_file = tmp_path / "install-stamp.json"
     stamp_file.write_text(json.dumps(stamp))
@@ -47,7 +48,7 @@ def test_stamp_version_info_reads_nix_stamp(tmp_path, monkeypatch):
 
 
 def test_stamp_version_info_preserves_ci_provenance_and_docker_distribution(tmp_path, monkeypatch):
-    stamp = {"commit": "d" * 40, "source": "ci", "distribution": "docker"}
+    stamp = {"commit": "d" * 40, "source": "ci", "distribution": "docker", "updateMechanism": "external"}
     stamp_file = tmp_path / "install-stamp.json"
     stamp_file.write_text(json.dumps(stamp))
     monkeypatch.setattr("hermes_cli.version_info._resolve_stamp_file", lambda: stamp_file)
@@ -82,6 +83,7 @@ def test_stamp_version_info_preserves_missing_branch(tmp_path, monkeypatch):
         "distance": None,
         "dirty": True,
         "source": "docker",
+        "updateMechanism": "external",
     }
     stamp_file = tmp_path / "install-stamp.json"
     stamp_file.write_text(json.dumps(stamp))
@@ -99,6 +101,7 @@ def test_stamp_version_info_ignores_fallback_commit(tmp_path, monkeypatch):
         "commit": "0" * 40,
         "branch": "main",
         "source": "fallback",
+        "updateMechanism": "self",
     }
     stamp_file = tmp_path / "install-stamp.json"
     stamp_file.write_text(json.dumps(stamp))

@@ -2093,6 +2093,18 @@ function Install-Repository {
     }
 
     Write-Success "Repository ready"
+
+    # The installer owns this checkout: record `updateMechanism: self` so the
+    # stamp-pure ladder (installation/tree.py) classifies it as managed. Keep
+    # an existing stamp — richer provenance must not be clobbered on re-runs.
+    # A plain Set-Content is fine here: PowerShell may BOM the file, and every
+    # stamp reader reads utf-8-sig (the PR #3 BOM bug is fixed at the readers).
+    $stampPath = Join-Path $InstallDir "install-stamp.json"
+    if (-not (Test-Path $stampPath)) {
+        $stampJson = "{`n  `"schemaVersion`": 2,`n  `"updateMechanism`": `"self`",`n  `"source`": `"installer`"`n}`n"
+        Set-Content -Path $stampPath -Value $stampJson -Encoding UTF8 -NoNewline
+        Write-Info "Wrote install stamp (updateMechanism: self)"
+    }
 }
 
 function Install-Venv {

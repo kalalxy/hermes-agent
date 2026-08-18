@@ -91,16 +91,30 @@ def _is_sealed(project_root: Path) -> bool:
     file, but importing it here would drag the ``installation`` package
     into this module's audit surface for one JSON read). A tree with
     BOTH a stamp and .git is a dev tree — treat as checkout.
+
+    Mirrors read_build_info()'s hard-fail: a stamp without a valid
+    ``updateMechanism`` is a build-lane bug and must not be silently
+    read as "not sealed" (that is exactly the misclassification that
+    made sealed trees look updatable).
     """
     if (project_root / ".git").exists():
         return False
     try:
         data = json.loads(
-            (project_root / "install-stamp.json").read_text(encoding="utf-8")
+            (project_root / "install-stamp.json").read_text(encoding="utf-8-sig")
         )
     except (OSError, ValueError):
         return False
-    return isinstance(data, dict) and bool(data)
+    if not (isinstance(data, dict) and bool(data)):
+        return False
+    if data.get("updateMechanism") not in ("self", "electron-updater", "external"):
+        raise RuntimeError(
+            f"install-stamp.json at {project_root} is missing a valid "
+            "'updateMechanism' (one of self, electron-updater, external). The "
+            "build lane that wrote this stamp must pass --update-mechanism to "
+            "scripts/write_install_stamp.py."
+        )
+    return True
 
 
 def _managed_uv(project_root: Path) -> str | None:

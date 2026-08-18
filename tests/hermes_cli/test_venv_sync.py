@@ -199,7 +199,7 @@ class TestSealedTrees:
         root = tmp_path / "sealed"
         root.mkdir()
         (root / "install-stamp.json").write_text(
-            json.dumps({"commit": "abc123", "payload": "full"})
+            json.dumps({"commit": "abc123", "payload": "full", "updateMechanism": "electron-updater"})
         )
         record = _fake_uv(tmp_path)
 
@@ -212,7 +212,9 @@ class TestSealedTrees:
         self, tmp_path, monkeypatch
     ):
         root = _checkout(tmp_path)
-        (root / "install-stamp.json").write_text(json.dumps({"commit": "abc"}))
+        (root / "install-stamp.json").write_text(
+            json.dumps({"commit": "abc", "updateMechanism": "electron-updater"})
+        )
         _wire_uv(monkeypatch, tmp_path, root)
 
         assert venv_sync.sync(root)["state"] == "synced"
@@ -223,7 +225,9 @@ class TestCliContract:
         """post_update and the installers read exactly this."""
         root = tmp_path / "sealed"
         root.mkdir()
-        (root / "install-stamp.json").write_text(json.dumps({"commit": "x"}))
+        (root / "install-stamp.json").write_text(
+            json.dumps({"commit": "x", "updateMechanism": "electron-updater"})
+        )
 
         proc = subprocess.run(
             [

@@ -34,6 +34,16 @@ from pathlib import Path
 STAMP_SCHEMA_VERSION = 2
 _REPO_ROOT = Path(__file__).parent.parent.resolve()
 
+# Who applies the next update to the tree this stamp describes. REQUIRED —
+# readers hard-fail a stamp without it (installation/tree.py).
+#   self             — `hermes update` owns the tree (installer-created
+#                      source checkouts).
+#   electron-updater — the in-app updater replaces the artifact (NSIS,
+#                      mac .app, AppImage).
+#   external         — something else replaces the artifact wholesale
+#                      (nix, docker, MSIX / app stores).
+UPDATE_MECHANISMS = ("self", "electron-updater", "external")
+
 # Hermes's historical tags use a four-digit calendar year as their major
 # component (for example v2026.7.20). Restrict release majors to three digits
 # so these date tags cannot masquerade as the v0.x.y SemVer boundaries.
@@ -119,6 +129,7 @@ def _compute_distance(base_version: str | None, release_date: str | None) -> int
 
 def build_stamp(
     *,
+    update_mechanism: str,
     commit: str | None = None,
     branch: str | None = None,
     dirty: bool | None = None,
@@ -132,8 +143,14 @@ def build_stamp(
 
     Args override detection — an explicit ``commit`` is used directly.
     ``source`` identifies where the stamp came from (``ci``, ``local``,
-    ``docker``, ``nix``, ``fallback``).
+    ``docker``, ``nix``, ``fallback``). ``update_mechanism`` is required:
+    every stamp names who applies the next update (see UPDATE_MECHANISMS).
     """
+    if update_mechanism not in UPDATE_MECHANISMS:
+        raise SystemExit(
+            f"write_install_stamp: invalid --update-mechanism {update_mechanism!r} "
+            f"(expected one of {', '.join(UPDATE_MECHANISMS)})"
+        )
     _base_version, _release_date = _parse_release_metadata()
     if base_version is None:
         base_version = _base_version
@@ -208,6 +225,7 @@ def build_stamp(
         "dirty": dirty,
         "source": source,
         "distribution": distribution,
+        "updateMechanism": update_mechanism,
         "baseVersion": base_version,
         "displayVersion": display_version,
         "distance": distance,
@@ -240,10 +258,18 @@ def main() -> int:
         choices=("docker", "nix", "desktop-app"),
         help="Package distribution (the steward that replaces this tree)",
     )
+    parser.add_argument(
+        "--update-mechanism",
+        required=True,
+        choices=UPDATE_MECHANISMS,
+        help="Who applies the next update: 'self' (hermes update), "
+        "'electron-updater' (in-app updater), 'external' (nix/docker/store)",
+    )
     args = parser.parse_args()
 
     stamp = write_stamp(
         args.output,
+        update_mechanism=args.update_mechanism,
         commit=args.commit,
         branch=args.branch,
         dirty=args.dirty,

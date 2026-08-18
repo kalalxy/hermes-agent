@@ -118,6 +118,17 @@ def _stamp_version_info() -> VersionInfo | None:
             "light artifact — this build is mispackaged."
         )
 
+    # updateMechanism is required in every stamp — same guard as
+    # installation.tree.read_build_info(). A stamp without it means the
+    # writing build lane must be fixed, not tolerated.
+    if data.get("updateMechanism") not in ("self", "electron-updater", "external"):
+        raise RuntimeError(
+            f"install-stamp.json at {stamp_file} is missing a valid "
+            "'updateMechanism' (one of self, electron-updater, external). The "
+            "build lane that wrote this stamp must pass --update-mechanism to "
+            "scripts/write_install_stamp.py (or bake the field directly)."
+        )
+
     commit = data.get("commit") or None
     if not commit or set(commit) == {"0"}:
         # All-zero placeholder = fallback stamp, not real provenance.
