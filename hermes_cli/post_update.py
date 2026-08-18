@@ -205,6 +205,88 @@ def step_provision_runtimes() -> dict:
     return _run()
 
 
+def step_adopt_blessed_checkout() -> dict:
+    """One-time adoption of shipped stampless installs (birth certificate).
+
+    Main-era curl|sh / Setup installs created a ``.git`` checkout at a
+    blessed managed root but never wrote a stamp — under the stamp-pure
+    ladder they would all classify as "somebody's working tree" and
+    `hermes update` would refuse them. This step writes the missing fact
+    exactly once: blessed root + ``.git`` + no stamp → a minimal stamp
+    with ``updateMechanism: self``.
+
+    The blessed-root table lives HERE and only here — it is a one-time
+    birth certificate for shipped installs, not a classification rung
+    (installation/tree.py never path-matches). Once pre-stamp installs
+    are extinct this step and the table can be deleted (TODO.md).
+
+    * ``.git`` anywhere else → never adopted.
+    * An existing stamp (any content) → untouched.
+    * nix/docker/sealed populations are excluded by construction: their
+      update mechanisms replace the tree wholesale with a
+      build-time-stamped one, and sealed payloads always ship stamps.
+    * Read-only tree (nix-like) → soft skip with a debug log, no crash.
+    """
+    import json
+    import tempfile
+
+    from hermes_constants import get_hermes_home
+    from installation.paths import get_install_root
+
+    root = get_install_root()
+
+    # The blessed roots: the canonical locations installers create.
+    # (The same table installation/tree.py's ladder used to path-match;
+    # it survives only in this adoption step.)
+    blessed = (
+        get_hermes_home() / "hermes-agent",
+        Path("/usr/local/lib/hermes-agent"),
+    )
+
+    if not (root / ".git").exists():
+        return {"ok": True, "skipped": "not-a-checkout"}
+    stamp_path = root / "install-stamp.json"
+    if stamp_path.exists():
+        return {"ok": True, "skipped": "already-stamped"}
+
+    resolved_root = None
+    try:
+        resolved_root = root.resolve()
+    except OSError:
+        return {"ok": True, "skipped": "unresolvable-root"}
+    is_blessed = False
+    for candidate in blessed:
+        try:
+            if resolved_root == candidate.resolve():
+                is_blessed = True
+                break
+        except OSError:
+            continue
+    if not is_blessed:
+        return {"ok": True, "skipped": "not-a-blessed-root"}
+
+    stamp = {
+        "schemaVersion": 2,
+        "updateMechanism": "self",
+        "source": "adoption",
+        "adoptedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(root), prefix=".install-stamp.", suffix=".tmp"
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(stamp, indent=2) + "\n")
+        os.replace(tmp_name, stamp_path)
+    except OSError as exc:
+        # A read-only tree (nix-like layouts without their own stamp)
+        # must not crash the boot — it just stays unadopted.
+        logger.debug("blessed-checkout adoption skipped (unwritable): %s", exc)
+        return {"ok": True, "skipped": f"unwritable: {exc}"}
+    logger.info("adopted blessed checkout at %s (updateMechanism: self)", root)
+    return {"ok": True, "adopted": str(root)}
+
+
 def step_expose_cli() -> dict:
     """Keep the user-facing ``hermes`` launchers alive across updates.
 
@@ -304,6 +386,7 @@ def step_expose_cli() -> dict:
 # ---------------------------------------------------------------------------
 
 HOME_STEPS: tuple = (
+    ("adopt_blessed_checkout", step_adopt_blessed_checkout),
     ("migrate_config", step_migrate_config),
     ("sync_skills", step_sync_skills),
     ("state_db_guard", step_state_db_guard),

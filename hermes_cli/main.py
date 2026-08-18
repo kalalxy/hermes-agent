@@ -9252,13 +9252,26 @@ def cmd_update(args):
 
         sys.exit(cmd_update_eject(args))
 
-    # Bundled desktop installs are materialized from payloads shipped inside
-    # the desktop app. The updater of the app re-materializes the checkout
-    # after the app updates itself. If `hermes update` changes that checkout,
-    # the checkout no longer agrees with the stamped tag of the shell. Thus
-    # refuse, and point at the in-app updater or at eject. Eject changes the
-    # install to source mode.
+    # Bundled desktop installs run the agent out of the app's signed
+    # resources. If `hermes update` changes that tree, the tree no longer
+    # agrees with the stamped tag of the shell. Refuse and point at the
+    # in-app updater.
+    #
+    # TWO detectors, deliberately OR'd (kshitijk4poor's live repro: the
+    # manifest's missing-file default is installMode "source", so the
+    # sealed resources-resident payload — which by design ships NO
+    # .hermes-install.json — sailed past a manifest-only guard into
+    # _cmd_update_impl and staged 107 MB of *.hermes-update-staging debris
+    # INTO the signed app resources). The stamp-derived install method
+    # covers the sealed payload; the manifest covers materialized bundled
+    # checkouts. A sealed tree cannot provision itself; the steward owns it.
     from hermes_cli.install_manifest import format_bundled_update_message, is_bundled_install
+
+    if install_method == "desktop-app":
+        from installation.tree import steward_update_message
+
+        print(steward_update_message("desktop-app"))
+        sys.exit(1)
 
     if is_bundled_install(PROJECT_ROOT):
         print(format_bundled_update_message())
