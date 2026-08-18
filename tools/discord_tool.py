@@ -221,7 +221,7 @@ def _save_caps_to_disk(token: str, caps: Dict[str, Any]) -> None:
             data = {}
         data[_token_cache_key(token)] = {"caps": caps, "ts": time.time()}
         tmp = path.with_suffix(".json.tmp")
-        with tmp.open("w", encoding="utf-8-sig") as f:
+        with tmp.open("w", encoding="utf-8") as f:
             json.dump(data, f)
         tmp.replace(path)
     except Exception:
