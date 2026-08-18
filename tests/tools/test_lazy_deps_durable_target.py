@@ -224,31 +224,29 @@ class TestInstallArgConstruction:
     def test_target_and_constraint_args_passed(self, tmp_path, monkeypatch):
         target = tmp_path / "lazy-packages"
         monkeypatch.setenv(ld._LAZY_TARGET_ENV, str(target))
-        # No uv on PATH → force the pip tier so we assert one known command.
-        monkeypatch.setattr(ld.shutil, "which", lambda _: None)
 
-        captured = {}
+        import installation.pip_ladder as ladder
+        import hermes_cli.managed_uv as managed_uv
+
+        # The managed uv is the only installer now, so pin it rather than
+        # steering PATH: which() no longer decides anything here.
+        monkeypatch.setattr(ladder, "default_uv", lambda: "/managed/bin/uv")
+        monkeypatch.setattr(managed_uv, "resolve_uv", lambda: "/managed/bin/uv")
+
         calls: list[list[str]] = []
 
         def fake_run(cmd, *a, **k):
-            # The pip --version probe must look healthy so we reach install.
-            if "--version" in cmd:
-                return subprocess.CompletedProcess(cmd, 0, "pip 24.0", "")
             calls.append(list(cmd))
-            captured["cmd"] = cmd
             return subprocess.CompletedProcess(cmd, 0, "ok", "")
 
-        monkeypatch.setattr(ld.subprocess, "run", fake_run)
+        monkeypatch.setattr(ladder.subprocess, "run", fake_run)
         # Avoid mutating the real interpreter's sys.path on success.
         monkeypatch.setattr(ld, "_activate_target_on_syspath", lambda _t: None)
 
         result = ld._venv_pip_install(("somepkg==1.2.3",))
         assert result.success
-        # The backend install, not the --no-deps security-override repair pass
-        # that follows it (see tools/lazy_deps._pip_reassert_overrides).
-        backend = [c for c in calls if "--no-deps" not in c]
-        assert backend, f"no backend install captured: {calls}"
-        cmd = backend[0]
+        assert calls, "no install captured"
+        cmd = calls[0]
         # --target points at the durable dir...
         assert "--target" in cmd
         assert str(target) in cmd
@@ -257,41 +255,41 @@ class TestInstallArgConstruction:
         # ...and the spec is last.
         assert cmd[-1] == "somepkg==1.2.3"
 
-    def test_override_repair_pass_targets_the_durable_dir(self, tmp_path, monkeypatch):
-        """The pip override repair must land in the durable target too.
+    def test_the_durable_target_reaches_uv_with_the_floor(self, tmp_path, monkeypatch):
+        """--target, --constraint and --overrides ride ONE uv resolution.
 
-        Without --target the repair would write the overridden package into
-        the sealed core venv, which is exactly what durable-target mode exists
-        to prevent.
+        This replaces a test of the pip tier's --no-deps repair pass.
+        That pass existed because pip has no --overrides flag, so the
+        floor had to be re-applied against a tree pip had already
+        changed. With uv as the only installer the floor is an input to
+        the resolution instead of a correction after it.
         """
         target = tmp_path / "lazy-packages"
         monkeypatch.setenv(ld._LAZY_TARGET_ENV, str(target))
-        monkeypatch.setattr(ld.shutil, "which", lambda _: None)
-        import installation.pip_ladder as ladder
 
-        # Force the pip tier: the shared ladder otherwise resolves the
-        # managed uv from the store facts even when which() finds nothing.
-        monkeypatch.setattr(ladder, "default_uv", lambda: None)
+        import installation.pip_ladder as ladder
+        import hermes_cli.managed_uv as managed_uv
+
+        monkeypatch.setattr(ladder, "default_uv", lambda: "/managed/bin/uv")
+        monkeypatch.setattr(managed_uv, "resolve_uv", lambda: "/managed/bin/uv")
 
         calls: list[list[str]] = []
 
         def fake_run(cmd, *a, **k):
-            if "--version" in cmd:
-                return subprocess.CompletedProcess(cmd, 0, "pip 24.0", "")
             calls.append(list(cmd))
             return subprocess.CompletedProcess(cmd, 0, "ok", "")
 
-        monkeypatch.setattr(ld.subprocess, "run", fake_run)
+        monkeypatch.setattr(ladder.subprocess, "run", fake_run)
         monkeypatch.setattr(ld, "_activate_target_on_syspath", lambda _t: None)
 
         ld._venv_pip_install(("somepkg==1.2.3",))
-        repair = [c for c in calls if "--no-deps" in c]
-        if not ld._security_overrides():
-            pytest.skip("no security overrides configured")
-        assert repair, f"no override repair pass captured: {calls}"
-        assert "--target" in repair[0] and str(target) in repair[0], (
-            f"repair pass must write to the durable target: {repair[0]}"
-        )
+
+        assert len(calls) == 1, f"more than one resolution ran: {calls}"
+        cmd = calls[0]
+        assert "--target" in cmd and str(target) in cmd
+        if ld._security_overrides():
+            assert "--overrides" in cmd, cmd
+        assert "--no-deps" not in cmd, f"a repair pass came back: {cmd}"
 
     def test_no_target_args_in_venv_scoped_mode(self, monkeypatch):
         # Env unset → plain venv-scoped install, no --target and no
@@ -302,24 +300,25 @@ class TestInstallArgConstruction:
         monkeypatch.setattr(
             tree_mod, "runtime_tree", lambda _root: object(), raising=True
         )
-        monkeypatch.setattr(ld.shutil, "which", lambda _: None)
+        import installation.pip_ladder as ladder
+        import hermes_cli.managed_uv as managed_uv
+
+        monkeypatch.setattr(ladder, "default_uv", lambda: "/managed/bin/uv")
+        monkeypatch.setattr(managed_uv, "resolve_uv", lambda: "/managed/bin/uv")
         captured = {}
 
         def fake_run(cmd, *a, **k):
-            if "--version" in cmd:
-                return subprocess.CompletedProcess(cmd, 0, "pip 24.0", "")
             captured["cmd"] = cmd
             return subprocess.CompletedProcess(cmd, 0, "ok", "")
 
-        monkeypatch.setattr(ld.subprocess, "run", fake_run)
+        monkeypatch.setattr(ladder.subprocess, "run", fake_run)
         result = ld._venv_pip_install(("somepkg==1.2.3",))
         assert result.success
         cmd = captured["cmd"]
         assert "--target" not in cmd
-        # The durable-target mode's core-constraints file must be absent. The
-        # pip tier does still carry a --constraint holding the security floor
-        # (see tools/lazy_deps._security_overrides), so assert on the file's
-        # role rather than on the flag's mere presence.
+        # The durable-target mode's core-constraints file must be absent.
+        # A --constraint may still appear for other reasons, so assert on
+        # the file's ROLE rather than on the flag's mere presence.
         constraint_paths = [
             Path(cmd[i + 1])
             for i, tok in enumerate(cmd)

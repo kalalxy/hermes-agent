@@ -34,14 +34,21 @@ class TestMemorySetupProviderRouting:
 
 
 class TestInstallDependenciesRunner:
-    """`_install_dependencies` must route through the canonical
-    ``_pip_install`` ladder (uv → pip → ensurepip): uv when present, standard
-    pip when uv is unavailable, and an ensurepip bootstrap for pip-less venvs
-    instead of dead-ending with "cannot install"."""
+    """`_install_dependencies` must route through ``_pip_install``.
 
-    def _run_with_missing_dep(self, tmp_path, which_side_effect, run_behavior=None):
+    There is no pip tier: pip resolves the same requirements again
+    without uv policy (exclude-newer, the [tool.uv] overrides), so it
+    can install a release the project quarantined. An unprovisioned
+    tree therefore reports a provisioning fault instead of installing a
+    different dependency set."""
+
+    def _run_with_missing_dep(self, tmp_path, uv_bin, run_behavior=None):
         """Drive _install_dependencies for a plugin that declares one missing
-        pip dep, capturing every subprocess.run argv issued by the ladder."""
+        pip dep, capturing every subprocess.run argv the install issues.
+
+        *uv_bin* is what ``ensure_uv()`` resolves to — the managed uv
+        path, or None for an unprovisioned tree.
+        """
         import os
         import sys
         from unittest.mock import patch as _patch
@@ -64,33 +71,27 @@ class TestInstallDependenciesRunner:
         # tests/tools/test_lazy_deps.py uses.
         with _patch.dict(os.environ, {"HERMES_DISABLE_LAZY_INSTALLS": "0"}), \
              patch("plugins.memory.find_provider_dir", return_value=tmp_path), \
-             patch("hermes_cli.tools_config.shutil.which", side_effect=which_side_effect), \
-             patch("hermes_cli.tools_config.subprocess.run", fake_run):
+             patch("hermes_cli.managed_uv.ensure_uv", return_value=uv_bin), \
+             patch("installation.pip_ladder.default_uv", return_value=uv_bin), \
+             patch("installation.pip_ladder.subprocess.run", fake_run):
             memory_setup._install_dependencies("x")
         return calls, sys.executable
 
-    def test_uses_uv_when_available(self, tmp_path):
-        calls, _ = self._run_with_missing_dep(
-            tmp_path, lambda b: "/usr/bin/uv" if b == "uv" else None
-        )
+    def test_installs_with_the_managed_uv(self, tmp_path):
+        calls, _ = self._run_with_missing_dep(tmp_path, "/managed/bin/uv")
         assert calls
-        assert calls[0][:3] == ["/usr/bin/uv", "pip", "install"]
+        assert calls[0][:3] == ["/managed/bin/uv", "pip", "install"]
 
-    def test_falls_back_to_pip_when_uv_missing(self, tmp_path):
-        """No uv but pip importable -> python -m pip install."""
-        calls, py = self._run_with_missing_dep(tmp_path, lambda b: None)
-        assert calls
-        # Ladder probes pip first, then installs with it.
-        assert calls[0][:3] == [py, "-m", "pip"]
-        assert calls[-1][:4] == [py, "-m", "pip", "install"]
+    def test_no_managed_uv_installs_nothing(self, tmp_path):
+        """An unprovisioned tree must not fall through to pip.
 
-    def test_bootstraps_pip_via_ensurepip_when_missing(self, tmp_path):
-        """Neither uv nor pip -> ensurepip bootstrap, then pip install."""
-        def behavior(cmd):
-            if cmd[-1] == "--version":
-                return SimpleNamespace(returncode=1, stdout="", stderr="")
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        pip would resolve without uv policy and could install a release
+        the project quarantined, so no install is the correct outcome.
+        """
+        calls, py = self._run_with_missing_dep(tmp_path, None)
+        assert calls == [], f"an install ran with no managed uv: {calls}"
 
-        calls, py = self._run_with_missing_dep(tmp_path, lambda b: None, behavior)
-        assert any("ensurepip" in c for c in calls)
-        assert calls[-1][:4] == [py, "-m", "pip", "install"]
+    def test_no_managed_uv_never_reaches_ensurepip(self, tmp_path):
+        """The ensurepip bootstrap existed only to heal a pip tier."""
+        calls, _ = self._run_with_missing_dep(tmp_path, None)
+        assert not any("ensurepip" in c for c in calls), calls

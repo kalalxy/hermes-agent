@@ -33,13 +33,21 @@ def test_marker_round_trip(tmp_path, monkeypatch):
 
 
 def _stub_install_env(monkeypatch, m, seen):
-    """Common stubs so recovery's install path is inert and observable."""
+    """Common stubs so recovery's install path is inert and observable.
+
+    ``ensure_uv`` resolves: there is no pip tier any more, so an
+    unresolved managed uv makes recovery report a provisioning fault
+    instead of installing. These tests are about the marker logic on a
+    healthy install, so they model one.
+    """
 
     class R:
         returncode = 0
 
     monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: R())
-    monkeypatch.setattr("hermes_cli.managed_uv.ensure_uv", lambda: None)
+    monkeypatch.setattr(
+        "hermes_cli.managed_uv.ensure_uv", lambda: "/managed/bin/uv"
+    )
     monkeypatch.setattr(
         m,
         "_install_python_dependencies_with_optional_fallback",

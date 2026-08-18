@@ -16,6 +16,22 @@ from unittest.mock import patch
 import pytest
 
 
+
+# The managed uv resolves from the store facts, never from PATH. These
+# tests patch shutil.which to keep PATH tools out of the way, which must
+# not decide whether a managed uv exists — and since there is no pip
+# tier, an unresolved uv makes the update try to provision for real
+# (into the read-only nix store, under the devshell).
+@pytest.fixture(autouse=True)
+def _stub_managed_uv():
+    from unittest.mock import patch as _p
+
+    with _p("hermes_cli.managed_uv.ensure_uv", return_value="/managed/bin/uv"), \
+         _p("hermes_cli.managed_uv.resolve_uv", return_value="/managed/bin/uv"), \
+         _p("hermes_cli.managed_uv.update_managed_uv", return_value=None):
+        yield
+
+
 def _build_zip_with_symlink_member(zip_path: str, link_name: str, target: str) -> None:
     """Write a ZIP containing a single member with S_IFLNK mode bits set."""
     with zipfile.ZipFile(zip_path, "w") as zf:

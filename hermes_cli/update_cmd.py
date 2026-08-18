@@ -4768,8 +4768,8 @@ def _cmd_update_impl(args, gateway_mode: bool):
             [uv_bin, "pip"], env=uv_env, group=install_group
         )
 
-        install_prefix = [uv_bin, "pip"] if uv_bin else pip_cmd
-        lazy_env = uv_env if uv_bin else None
+        install_prefix = [uv_bin, "pip"]
+        lazy_env = uv_env
 
         # Core ``.[all]`` install finished. Clear the generic core breadcrumb
         # before the lazy-refresh phase — that phase uses its own marker so a

@@ -85,8 +85,16 @@ def install(monkeypatch):
     return run
 
 
-class TestOverridesReachBothInstallerTiers:
-    """Both tiers of the install ladder must receive the floor."""
+class TestOverridesReachTheInstaller:
+    """The security floor must reach uv as --overrides.
+
+    There used to be a pip tier here, and it needed a follow-up
+    --no-deps repair pass because pip has no --overrides flag: a
+    --constraint would hold the pinned package but resolve the BACKEND
+    backwards (measured: alibabacloud-tea-openapi 0.4.5 to 0.3.16). Both
+    the tier and its repair pass are gone. uv applies the floor in one
+    resolution, which is the whole reason to keep only that tier.
+    """
 
     def test_uv_tier_receives_overrides_flag(self, install):
         calls, contents = install(uv=True)
@@ -102,38 +110,22 @@ class TestOverridesReachBothInstallerTiers:
                 f"override {spec!r} missing from the file handed to uv: {body!r}"
             )
 
-    def test_pip_tier_reasserts_the_floor_with_no_deps(self, install):
-        """pip has no --overrides; it must re-assert the floor via --no-deps.
+    def test_no_managed_uv_installs_nothing(self, install):
+        """Without uv there is no installer, so nothing may run.
 
-        Passing the floor as a --constraint instead would hold the pinned
-        package but resolve the *backend* backwards, so the repair pass is the
-        behaviour under test.
+        A pip fallback would resolve the same requirements WITHOUT the
+        floor uv applies through --overrides, which is exactly the
+        supply-chain hole the floor exists to close.
         """
         calls, _ = install(uv=False)
-        repair = [c for c in calls if "install" in c and "--no-deps" in c]
-        assert repair, (
-            f"pip tier must re-assert security overrides with --no-deps: {calls}"
-        )
-        cmd = repair[0]
-        for spec in ld._security_overrides():
-            assert spec in cmd, (
-                f"override {spec!r} missing from the pip repair pass: {cmd}"
-            )
+        assert calls == [], f"an install ran with no managed uv: {calls}"
 
-    def test_pip_repair_pass_does_not_reinstall_the_backend(self, install):
-        """The repair pass must touch only the overridden packages.
+    def test_no_no_deps_repair_pass_survives(self, install):
+        """The --no-deps repair pass belonged to the pip tier."""
+        calls, _ = install(uv=True)
+        assert not [c for c in calls if "--no-deps" in c], calls
 
-        Including the backend specs would re-run resolution and undo the point
-        of --no-deps.
-        """
-        calls, _ = install(uv=False)
-        repair = [c for c in calls if "install" in c and "--no-deps" in c]
-        assert repair
-        assert BACKEND not in repair[0], (
-            f"repair pass must not re-install the backend: {repair[0]}"
-        )
-
-    @pytest.mark.parametrize("uv", [True, False])
+    @pytest.mark.parametrize("uv", [True])
     def test_temp_files_are_cleaned_up(self, install, uv):
         calls, _ = install(uv=uv)
         for cmd in calls:
@@ -144,7 +136,7 @@ class TestOverridesReachBothInstallerTiers:
                         f"{flag} temp file leaked after install: {leaked}"
                     )
 
-    @pytest.mark.parametrize("uv", [True, False])
+    @pytest.mark.parametrize("uv", [True])
     def test_specs_still_reach_the_installer(self, install, uv):
         """The override plumbing must not displace the actual packages."""
         calls, _ = install(uv=uv)

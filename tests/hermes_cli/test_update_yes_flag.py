@@ -69,6 +69,18 @@ def _make_run_side_effect(
     return side_effect
 
 
+# The managed uv resolves from the store facts, never from PATH. Tests
+# here patch shutil.which to keep PATH tools out of the way, which must
+# not decide whether a managed uv exists — and since there is no pip
+# tier, an unresolved uv makes the update try to provision for real.
+@pytest.fixture(autouse=True)
+def _stub_managed_uv():
+    with patch("hermes_cli.managed_uv.ensure_uv", return_value="/managed/bin/uv"), \
+         patch("hermes_cli.managed_uv.resolve_uv", return_value="/managed/bin/uv"), \
+         patch("hermes_cli.managed_uv.update_managed_uv", return_value=None):
+        yield
+
+
 class TestUpdateYesConfigMigration:
     """--yes auto-answers the config-migration prompt and skips API-key prompts."""
 
