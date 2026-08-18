@@ -54,7 +54,9 @@ STEWARD_UPDATE_MESSAGES = {
     STEWARD_DESKTOP: (
         "✗ This Hermes runs from inside the desktop app bundle.\n"
         "\n"
-        "Manage updates from within the desktop app."
+        "Manage updates from within the desktop app.\n"
+        "Prefer a self-managed source install? See:\n"
+        "  https://hermes-agent.nousresearch.com/docs/user-guide/switching-to-source"
     ),
     STEWARD_DOCKER: """\
 ✗ ``hermes update`` doesn't apply inside the Docker container.
