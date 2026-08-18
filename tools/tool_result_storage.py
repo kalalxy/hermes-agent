@@ -10,7 +10,8 @@ Defense against context-window overflow operates at three levels:
    returns, if its output exceeds the tool's registered threshold
    (registry.get_max_result_size), the full output is written INTO THE
    SANDBOX temp dir (for example /tmp/hermes-results/{tool_use_id}.txt on
-   standard Linux, or $TMPDIR/hermes-results/{tool_use_id}.txt on Termux)
+   standard Linux, or $TMPDIR/hermes-results/{tool_use_id}.txt where /tmp
+   is missing)
    via env.execute(). The in-context content is replaced with a preview +
    file path reference. The model can read_file to access the full output
    on any backend.
