@@ -19,7 +19,6 @@ import {
   setCurrentUsage,
   setSessions,
   setTerminalBackend,
-  setTurnStartedAt,
   setWorkspaceCwdOwner,
   setYoloActive
 } from '@/store/session'

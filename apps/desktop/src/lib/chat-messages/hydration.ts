@@ -15,9 +15,9 @@ import {
   applyStoredToolResult,
   applyStoredToolResultToParts,
   storedToolMessagePart,
+  textFromUnknown,
   toolPartFromStoredCall,
-  withUniqueToolCallIds,
-  textFromUnknown
+  withUniqueToolCallIds
 } from './tool-parts'
 import type { ChatMessage, ChatMessagePart } from './types'
 

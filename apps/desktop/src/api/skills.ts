@@ -8,7 +8,7 @@ import type {
 } from '@/types/hermes'
 import type { ActionResponse } from '@/types/hermes'
 
-import { capabilityScoped, profileScoped, type ProfileScope } from './client'
+import { capabilityScoped, type ProfileScope, profileScoped } from './client'
 
 export function getSkills(profile?: ProfileScope): Promise<SkillInfo[]> {
   return window.hermesDesktop.api<SkillInfo[]>({

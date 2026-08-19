@@ -1,8 +1,8 @@
 import { translateNow } from '@/i18n'
+import { normalizeChoices, setClarifyRequest, warnDroppedChoices } from '@/store/clarify'
+import { $gateway } from '@/store/gateway'
 import { setMcpSetupRequest } from '@/store/mcp-setup'
 import { dispatchNativeNotification } from '@/store/native-notifications'
-import { $gateway } from '@/store/gateway'
-import { normalizeChoices, setClarifyRequest, warnDroppedChoices } from '@/store/clarify'
 import { receiveApprovalRequest, setSecretRequest, setSudoRequest } from '@/store/prompts'
 import { requestScrollToBottom } from '@/store/thread-scroll'
 

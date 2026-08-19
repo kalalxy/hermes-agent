@@ -12,7 +12,7 @@ import type {
   MemoryStatusResponse
 } from '@/types/hermes'
 
-import { capabilityScoped, profileScoped, type ProfileScope } from './client'
+import { capabilityScoped, type ProfileScope, profileScoped } from './client'
 
 export const AUDIO_SPEAK_MIN_REQUEST_TIMEOUT_MS = 180_000
 export const AUDIO_SPEAK_MAX_REQUEST_TIMEOUT_MS = 600_000

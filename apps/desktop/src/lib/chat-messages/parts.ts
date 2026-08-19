@@ -2,8 +2,7 @@ import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { mediaDisplayLabel, mediaMarkdownHref } from '@/lib/media'
 import { parseTodos } from '@/lib/todos'
 
-import type { ChatMessage, ChatMessagePart, GatewayEventPayload } from './types'
-import type { SessionMessage } from '@/types/hermes'
+import type { ChatMessage, ChatMessagePart } from './types'
 
 export function textPart(text: string, timestamp?: number): ChatMessagePart {
   return { type: 'text', text, ...(timestamp !== undefined ? { timestamp } : {}) }

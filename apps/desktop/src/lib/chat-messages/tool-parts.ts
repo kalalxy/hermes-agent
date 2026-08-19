@@ -98,6 +98,7 @@ function liveToolArgs(payload: GatewayEventPayload | undefined): Record<string, 
 
 function toolPayloadMatchValues(payload: GatewayEventPayload | undefined): string[] {
   const payloadArgs = liveToolArgs(payload)
+
   // `question` is clarify's identifying arg: a synthetic row hydrated from
   // `clarify.request` (a fresh request id) must correlate with the `tool.start`
   // row (the model's tool_call_id) so the two ids don't produce a duplicate

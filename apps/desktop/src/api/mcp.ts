@@ -1,6 +1,6 @@
 import type { McpCatalogResponse, McpServerSummary } from '@/types/hermes'
 
-import { capabilityScoped, profileScoped, type ProfileScope } from './client'
+import { capabilityScoped, type ProfileScope, profileScoped } from './client'
 
 export interface McpTestResult {
   ok: boolean

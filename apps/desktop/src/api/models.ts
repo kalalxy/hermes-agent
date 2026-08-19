@@ -8,7 +8,7 @@ import type {
   ModelOptionsResponse
 } from '@/types/hermes'
 
-import { capabilityScoped, profileScoped, type ProfileScope, STARTUP_REQUEST_TIMEOUT_MS } from './client'
+import { capabilityScoped, type ProfileScope, profileScoped, STARTUP_REQUEST_TIMEOUT_MS } from './client'
 
 export function getGlobalModelInfo(profile?: null | string): Promise<ModelInfoResponse> {
   return window.hermesDesktop.api<ModelInfoResponse>({
