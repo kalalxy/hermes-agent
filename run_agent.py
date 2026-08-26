@@ -6992,6 +6992,12 @@ class AIAgent:
                 # 异步队列派发（worker 线程），回调时刻相对真实到达有不可控延迟，
                 # 故在此（同步 token 路径）记录时间戳随 payload 下发。
                 delta_at=time.time(),
+                # HTTP 请求发出时刻（chat_completion_helpers 在 create() 前记录）：
+                # 供 TTFT = 首包 − 请求发出 的精确测量，剔除 agent 请求准备时间。
+                request_sent_at=getattr(self, "_current_request_sent_at", None),
+                # 首个 chunk 到达时刻（含 reasoning 首包）：reasoning 模型首个文本
+                # delta 远晚于首包，TTFT 应取更早的首包时刻。
+                first_chunk_at=getattr(self, "_current_first_chunk_at", None),
             )
         except Exception:
             logger.debug("on_stream_delta plugin hook enqueue failed", exc_info=True)

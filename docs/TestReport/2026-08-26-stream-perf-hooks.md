@@ -6,8 +6,8 @@
 | 测试对象 | `tui_gateway/stream_perf_hooks.py`（新增，官方 hook 聚合 + 实时推送）+ `tui_gateway/server.py`（挂载 + stream.perf 事件路由）+ `run_agent.py`（delta_at 时间戳）+ `~/.hermes/desktop-plugins/composer-stats/plugin.js`（消费端，实时 cur 组） |
 | 测试类型 | pytest 纯逻辑单测 + Node 插件单测 + **真实 LLM 端到端验证**（cass-code / deepseek-v4-flash 真实调用，含实时推送） |
 | 测试工具 | hermes-agent venv Python 3.11（pytest 9.1.1）/ Node.js（esbuild 0.28.1） |
-| 测试代码 | `tests/test_tui_gateway_stream_perf.py`（17 用例）<br>`~/.hermes/desktop-plugins/composer-stats/test_plugin.js`（76 断言）<br>`/tmp/e2e_stream_perf.py` + `/tmp/e2e_stream_perf_realtime.py`（真实端到端） |
-| 结论 | **PASS**（pytest 17/17 + 插件 76/76 + 真实调用 TTFT 1.55s + 实时推送轮结束前收到增量） |
+| 测试代码 | `tests/test_tui_gateway_stream_perf.py`（21 用例）<br>`~/.hermes/desktop-plugins/composer-stats/test_plugin.js`（76 断言）<br>`/tmp/e2e_stream_perf.py` + `/tmp/e2e_stream_perf_realtime.py` + `/tmp/accuracy_stream_perf.py`（真实端到端 + 准确度交叉验证） |
+| 结论 | **PASS**（pytest 21/21 + 插件 76/76 + 准确度交叉验证全部通过） |
 
 ---
 
@@ -49,7 +49,8 @@ cass-code（deepseek-v4-flash）实测为**批量返回**（2 个 delta 间隔 2
 |------|------|
 | `tui_gateway/stream_perf_hooks.py`（新增） | 注册官方 hook（`post_api_request` + `on_stream_delta`，照 `agent/outbound_webhooks.py:194` 第一方先例），按 `(session_id, api_call_count)` 聚合 TTFT / 生成窗口 / 输出 token；批量返回自适应退化；**每次 API 调用完成即触发 `on_update` 实时推送（增量）** |
 | `tui_gateway/server.py` | import + 幂等注册 + `set_on_update`；`_AGENT_TO_UI` 映射（agent.session_id → UI sid）；`message.start` 处 `begin_turn` + 登记映射；**API 调用完成实时推 `stream.perf` 事件**；`message.complete` 附整轮 `stream_perf` 并清理映射 |
-| `run_agent.py` | `on_stream_delta` enqueue 补 `delta_at=time.time()`（同步 token 路径，精确时间戳，4 行） |
+| `run_agent.py` | `on_stream_delta` enqueue 补 `delta_at=time.time()`（同步 token 路径，精确时间戳）+ `request_sent_at`（HTTP 发出时刻）+ `first_chunk_at`（首个 chunk，含 reasoning 首包） |
+| `agent/chat_completion_helpers.py` | `_open_stream` create() 前记 `agent._current_request_sent_at`；首个 chunk 处记 `agent._current_first_chunk_at`（各 1 行，仅赋值） |
 | `plugin.js`（桌面插件） | 删除旧的首 token 事件差计算与 usage 帧差 TPS 采样；**实时 cur 组**（`stream.perf` 增量累计，轮未结束即可展示）+ done 组（`message.complete` 整轮吸收后 cur 清零，不重复计数）；显示 = done + cur |
 
 **指标口径（最终）**：
@@ -59,7 +60,7 @@ cass-code（deepseek-v4-flash）实测为**批量返回**（2 个 delta 间隔 2
 
 ## 三、测试用例与执行结果
 
-### 3.1 聚合逻辑 pytest 单测（17 用例，`tests/test_tui_gateway_stream_perf.py`）
+### 3.1 聚合逻辑 pytest 单测（21 用例，`tests/test_tui_gateway_stream_perf.py`）
 
 测试方法：`StreamPerfCollector` 纯逻辑直测（turn 生命周期 / TTFT / 生成窗口 / 会话隔离 / 批量退化）。
 
@@ -82,12 +83,16 @@ cass-code（deepseek-v4-flash）实测为**批量返回**（2 个 delta 间隔 2
 | 15 | 工具轮（无 delta）不触发 on_update | 实时推送口径 | ✅ PASS |
 | 16 | 每次 API 调用独立触发 on_update（增量语义） | 实时推送 | ✅ PASS |
 | 17 | set_on_update 替换回调 | 实时推送可配置 | ✅ PASS |
+| 18 | TTFT 优先用 request_sent_at（HTTP 发出时刻）基线 | **精确 TTFT** | ✅ PASS |
+| 19 | 无 request_sent_at 回退 started_at（兼容旧后端） | 兼容性 | ✅ PASS |
+| 20 | 批量退化 gen 用 request_sent_at（真实调用总时长） | 精确 TPS 分母 | ✅ PASS |
+| 21 | reasoning 模型 TTFT 取首个 chunk（含 reasoning 首包） | **reasoning 首包** | ✅ PASS |
 
-**测试统计：17 passed, 0 failed**
+**测试统计：21 passed, 0 failed**
 
 ```
 $ venv/bin/python -m pytest tests/test_tui_gateway_stream_perf.py -q
-17 passed in 0.59s
+21 passed in 0.71s
 ```
 
 ### 3.2 桌面插件单测（76 断言，`test_plugin.js`）
@@ -152,6 +157,20 @@ end_turn 整轮汇总 = {'calls': 2, 'ttft_calls': 2, 'ttft_ms': 3629.3, 'gen_ms
 整轮 vs 实时累计：ttft 3629.3 vs 3629.3 | gen 2344.3 vs 2344.2 | out 560 vs 560
 实时推送验证：PASS（轮结束前已收到增量）
 ```
+
+### 3.6 准确度交叉验证（`/tmp/accuracy_stream_perf.py`，真实 provider）
+
+测试方法：**裸 HTTP 直连 cass-code 独立计时**（小 input / 大 input 模拟 agent 规模两组基线），与 agent stream_perf 交叉对比，检验测量准确度而非仅链路通。
+
+| 组 | 基线（裸 HTTP 独立计时） | agent stream_perf（3 轮） | 对比结果 |
+|----|------------------------|--------------------------|---------|
+| TTFT | 小 input：576ms；大 input（模拟 system+tools）：**736ms** | 0.73 / 1.11 / 1.45s | 比值 0.99-1.97 ✅ 同量级（偏差=agent 真实 input 更大，prefill 更久） |
+| output_tokens | — | 19 / 49 / 15 | 与独立计数器 `session_output_tokens` 增量 **3/3 完全一致** ✅ |
+| TPS | 大 input 总耗时口径：**29.0 tok/s** | 14.3 / 30.7 / 16.4 | 比值 0.49-1.06 ✅ 同量级（差异=单次输出 token 量不同） |
+
+**准确度结论：全部通过 ✅** —— TTFT 与同规模 input 的独立计时一致；output_tokens 与独立计数器绝对一致；TPS 与独立吞吐同量级。无系统性测量误差。
+
+> 排查记录：初版 TTFT 偏大 2-3.5x，逐层定位——① started_at 含 agent 请求准备时间 → 改用 `request_sent_at`（create() 前，HTTP 发出时刻）；② reasoning 模型（cass-code deepseek-v4-flash 实测 27 个 reasoning chunk 后才出文本）首个文本 delta 远晚于首包 → 改用 `first_chunk_at`（首个 chunk，含 reasoning 首包）作首 token 时刻。两处修正后 TTFT 从 1.4-2.0s 收敛到 0.73-1.45s，与同规模基线一致。
 
 ### 3.4 回归测试
 

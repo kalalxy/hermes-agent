@@ -46,8 +46,10 @@ class StreamPerfCollector:
     def __init__(self, on_update: Optional[Callable[[str, Dict[str, Any]], None]] = None) -> None:
         self._lock = threading.Lock()
         self._turns: Dict[str, Dict[str, Any]] = {}
-        # (session_id, api_call_count) -> 首个 delta 时刻（epoch 秒）
-        self._pending: Dict[Tuple[str, int], float] = {}
+        # (session_id, api_call_count) -> (首个 delta 时刻, HTTP 请求发出时刻, 首个 chunk 时刻)
+        # 首 token 时刻取 min(首个 chunk, 首个文本 delta)——reasoning 模型首个文本
+        # delta 远晚于首包，TTFT 应按首个 chunk（含 reasoning）计算。
+        self._pending: Dict[Tuple[str, int], Tuple[float, Optional[float], Optional[float]]] = {}
         # 每次 API 调用完成聚合后回调（实时推送，增量语义）。签名 (agent_sid, 单次调用增量)。
         self._on_update = on_update
 
@@ -61,13 +63,21 @@ class StreamPerfCollector:
         with self._lock:
             self._turns[sid] = {k: (0 if k != "ttft_ms" else 0.0) for k in _TURN_KEYS}
 
-    def on_first_delta(self, sid: str, call: int, at: float) -> None:
+    def on_first_delta(
+        self,
+        sid: str,
+        call: int,
+        at: float,
+        request_sent_at: Optional[float] = None,
+        first_chunk_at: Optional[float] = None,
+    ) -> None:
+        """首个 delta 时刻（即首 token 时刻）。只记录一次，后到者忽略。"""
         if not sid:
             return
         key = (sid, call)
         with self._lock:
-            # 首个 delta 记录一次；重试/后续 delta 不覆盖
-            self._pending.setdefault(key, at)
+            if key not in self._pending:
+                self._pending[key] = (at, request_sent_at, first_chunk_at)
 
     def on_api_done(
         self,
@@ -81,22 +91,31 @@ class StreamPerfCollector:
             return
         key = (sid, call)
         with self._lock:
-            first = self._pending.pop(key, None)
+            pending = self._pending.pop(key, None)
             turn = self._turns.get(sid)
             if turn is None:
                 return  # 无进行中的轮（晚到事件）→ 丢弃，绝不跨轮污染
             turn["calls"] += 1
-            if first is None:
+            if pending is None:
                 # 工具轮（无文本 delta）：不贡献 TTFT / 生成窗口 / output_tokens，
                 # 防止工具参数生成与排队时间稀释 TPS。
                 return
+            first, request_sent_at, first_chunk_at = pending
+            # 首 token 时刻 = min(首个 chunk, 首个文本 delta)：reasoning 模型首包
+            # 远早于首个文本 delta，TTFT 应取更早的首包（"大模型返回第一个 token"）。
+            first_token_at = min(first, first_chunk_at) if first_chunk_at is not None else first
+            # TTFT 基线优先用 HTTP 请求发出时刻（剔除 agent 请求准备时间）；
+            # 旧版后端无该字段时回退 post_api_request 的 started_at。
+            sent = request_sent_at if request_sent_at is not None else float(started_at)
             turn["ttft_calls"] += 1
-            turn["ttft_ms"] += max(0.0, first - float(started_at)) * 1000
-            api_dur = max(0.0, float(ended_at) - float(started_at))
-            gen = max(0.0, float(ended_at) - first)
+            ttft_ms = max(0.0, first_token_at - float(sent)) * 1000
+            turn["ttft_ms"] += ttft_ms
+            api_end = float(ended_at)
+            api_dur = max(0.0, api_end - float(sent)) if request_sent_at is not None else max(0.0, api_end - float(started_at))
+            gen = max(0.0, api_end - first_token_at)
             if gen < 0.3 * api_dur + 0.05:
                 # 批量返回特征（provider 攒批，首包≈末包）：客户端观测不到
-                # 逐 token 生成窗口，生成贯穿整个 API 调用，退化用 API 总时长，
+                # 逐 token 生成窗口，生成贯穿整个调用，退化用调用总时长，
                 # 避免 gen≈0 导致 TPS 虚假放大。
                 gen = api_dur
             turn["gen_ms"] += gen * 1000
@@ -110,7 +129,7 @@ class StreamPerfCollector:
                         {
                             "calls": 1,
                             "ttft_calls": 1,
-                            "ttft_ms": round(max(0.0, first - float(started_at)) * 1000, 1),
+                            "ttft_ms": round(ttft_ms, 1),
                             "gen_ms": round(gen * 1000, 1),
                             "output_tokens": max(0, int(output_tokens or 0)),
                         },
@@ -180,7 +199,11 @@ def _make_on_stream_delta_cb(collector: StreamPerfCollector):
                 return
             delta_at = kwargs.get("delta_at")
             at = float(delta_at) if delta_at is not None else time.time()
-            collector.on_first_delta(sid, call, at)
+            sent = kwargs.get("request_sent_at")
+            request_sent_at = float(sent) if sent is not None else None
+            fca = kwargs.get("first_chunk_at")
+            first_chunk_at = float(fca) if fca is not None else None
+            collector.on_first_delta(sid, call, at, request_sent_at, first_chunk_at)
         except Exception:
             logger.debug("stream_perf on_stream_delta hook failed", exc_info=True)
 

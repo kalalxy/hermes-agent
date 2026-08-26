@@ -3939,6 +3939,10 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             )
             attempt_request_client["value"] = request_client
             last_chunk_time["t"] = time.time()
+            # 供 stream.perf 测量真实 TTFT：HTTP 请求发出时刻（create 为同步调用，
+            # 内部发起连接，此处是请求真正发出前一刻）。on_stream_delta hook 经
+            # payload 读取，避免把 agent 侧请求准备时间计入 TTFT。
+            agent._current_request_sent_at = time.time()
             agent._touch_activity("waiting for provider response (streaming)")
             return request_client.chat.completions.create(**stream_kwargs)
 
@@ -4066,6 +4070,10 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 _diag["chunks"] = int(_diag.get("chunks", 0)) + 1
                 if _diag.get("first_chunk_at") is None:
                     _diag["first_chunk_at"] = last_chunk_time["t"]
+                    # 首个 chunk 到达时刻（含 reasoning 首包）：stream.perf 用它测
+                    # 真实 TTFT = 首个 token − 请求发出，避免只算文本 delta 而漏掉
+                    # reasoning 时段（reasoning 模型首个文本 token 远晚于首包）。
+                    agent._current_first_chunk_at = last_chunk_time["t"]
                 # Approximate byte size from the chunk's delta payload —
                 # exact wire bytes aren't exposed by the SDK. A full
                 # repr() per chunk was 5.5-8.8 µs of pure CPU on the

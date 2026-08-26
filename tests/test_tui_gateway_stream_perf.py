@@ -133,6 +133,50 @@ class TestGenWindow:
         assert summary["gen_ms"] == pytest.approx(16000.0)  # 16s 窗口，不退化
 
 
+class TestRequestSentBaseline:
+    def test_ttft_uses_request_sent_at_when_available(self):
+        # request_sent_at（HTTP 发出时刻）比 started_at 晚：TTFT 用它剔除请求准备时间
+        c = _collector()
+        c.begin_turn("s1")
+        c.on_first_delta("s1", 0, 114.0, request_sent_at=110.0)
+        c.on_api_done("s1", 0, 100.0, 130.0, 300)
+        summary = c.end_turn("s1")
+        assert summary is not None
+        assert summary["ttft_ms"] == pytest.approx((114.0 - 110.0) * 1000)  # 4000ms
+
+    def test_falls_back_to_started_at_without_request_sent(self):
+        # 旧版后端无 request_sent_at → 回退 started_at 基线（兼容）
+        c = _collector()
+        c.begin_turn("s1")
+        c.on_first_delta("s1", 0, 114.0)  # 不传 request_sent_at
+        c.on_api_done("s1", 0, 100.0, 130.0, 300)
+        summary = c.end_turn("s1")
+        assert summary is not None
+        assert summary["ttft_ms"] == pytest.approx((114.0 - 100.0) * 1000)  # 14000ms
+
+    def test_batch_degrades_gen_uses_request_sent_at(self):
+        # 批量返回退化：gen 用 ended − request_sent_at（真实 HTTP 总时长）
+        c = _collector()
+        c.begin_turn("s1")
+        c.on_first_delta("s1", 0, 129.9, request_sent_at=101.0)
+        c.on_api_done("s1", 0, 100.0, 130.0, 400)
+        summary = c.end_turn("s1")
+        assert summary is not None
+        assert summary["gen_ms"] == pytest.approx((130.0 - 101.0) * 1000)  # 29s
+
+    def test_reasoning_model_ttft_uses_first_chunk(self):
+        # reasoning 模型：首个文本 delta（1.2s）远晚于首个 chunk（0.4s），
+        # TTFT 应取更早的首包（"大模型返回第一个 token"）
+        c = _collector()
+        c.begin_turn("s1")
+        c.on_first_delta("s1", 0, 121.0, request_sent_at=100.0, first_chunk_at=104.0)
+        c.on_api_done("s1", 0, 100.0, 130.0, 300)
+        summary = c.end_turn("s1")
+        assert summary is not None
+        assert summary["ttft_ms"] == pytest.approx((104.0 - 100.0) * 1000)  # 4s（首包），非 21s
+        # gen 也从首包算到结束：130 − 104 = 26s（批量退化阈值内不变）
+
+
 class TestRealtimeUpdate:
     def test_on_update_fires_increment_after_api_done(self):
         updates = []
