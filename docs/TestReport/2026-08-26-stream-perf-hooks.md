@@ -3,11 +3,11 @@
 | 项 | 内容 |
 |----|------|
 | 测试日期 | 2026-08-26 |
-| 测试对象 | `tui_gateway/stream_perf_hooks.py`（新增，官方 hook 聚合）+ `tui_gateway/server.py`（挂载）+ `run_agent.py`（delta_at 时间戳）+ `~/.hermes/desktop-plugins/composer-stats/plugin.js`（消费端） |
-| 测试类型 | pytest 纯逻辑单测 + Node 插件单测 + **真实 LLM 端到端验证**（cass-code / deepseek-v4-flash 真实调用） |
+| 测试对象 | `tui_gateway/stream_perf_hooks.py`（新增，官方 hook 聚合 + 实时推送）+ `tui_gateway/server.py`（挂载 + stream.perf 事件路由）+ `run_agent.py`（delta_at 时间戳）+ `~/.hermes/desktop-plugins/composer-stats/plugin.js`（消费端，实时 cur 组） |
+| 测试类型 | pytest 纯逻辑单测 + Node 插件单测 + **真实 LLM 端到端验证**（cass-code / deepseek-v4-flash 真实调用，含实时推送） |
 | 测试工具 | hermes-agent venv Python 3.11（pytest 9.1.1）/ Node.js（esbuild 0.28.1） |
-| 测试代码 | `tests/test_tui_gateway_stream_perf.py`（13 用例）<br>`~/.hermes/desktop-plugins/composer-stats/test_plugin.js`（63 断言）<br>`/tmp/e2e_stream_perf.py`（真实端到端） |
-| 结论 | **PASS**（pytest 13/13 + 插件 63/63 + 真实调用 TTFT 1.55s 验证通过） |
+| 测试代码 | `tests/test_tui_gateway_stream_perf.py`（17 用例）<br>`~/.hermes/desktop-plugins/composer-stats/test_plugin.js`（76 断言）<br>`/tmp/e2e_stream_perf.py` + `/tmp/e2e_stream_perf_realtime.py`（真实端到端） |
+| 结论 | **PASS**（pytest 17/17 + 插件 76/76 + 真实调用 TTFT 1.55s + 实时推送轮结束前收到增量） |
 
 ---
 
@@ -47,18 +47,19 @@ cass-code（deepseek-v4-flash）实测为**批量返回**（2 个 delta 间隔 2
 
 | 文件 | 改动 |
 |------|------|
-| `tui_gateway/stream_perf_hooks.py`（新增） | 注册官方 hook（`post_api_request` + `on_stream_delta`，照 `agent/outbound_webhooks.py:194` 第一方先例），按 `(session_id, api_call_count)` 聚合 TTFT / 生成窗口 / 输出 token；批量返回自适应退化 |
-| `tui_gateway/server.py` | import + 幂等注册（3 行）；`message.start` 处 `begin_turn(agent.session_id)`（2 行）；`message.complete` 附 `stream_perf`（5 行） |
+| `tui_gateway/stream_perf_hooks.py`（新增） | 注册官方 hook（`post_api_request` + `on_stream_delta`，照 `agent/outbound_webhooks.py:194` 第一方先例），按 `(session_id, api_call_count)` 聚合 TTFT / 生成窗口 / 输出 token；批量返回自适应退化；**每次 API 调用完成即触发 `on_update` 实时推送（增量）** |
+| `tui_gateway/server.py` | import + 幂等注册 + `set_on_update`；`_AGENT_TO_UI` 映射（agent.session_id → UI sid）；`message.start` 处 `begin_turn` + 登记映射；**API 调用完成实时推 `stream.perf` 事件**；`message.complete` 附整轮 `stream_perf` 并清理映射 |
 | `run_agent.py` | `on_stream_delta` enqueue 补 `delta_at=time.time()`（同步 token 路径，精确时间戳，4 行） |
-| `plugin.js`（桌面插件） | 删除旧的首 token 事件差计算与 usage 帧差 TPS 采样；`message.complete` 消费 `stream_perf`：首 token 平均 = ΣTTFT/有首包调用数，TPS = Σ输出 token/Σ生成窗口 |
+| `plugin.js`（桌面插件） | 删除旧的首 token 事件差计算与 usage 帧差 TPS 采样；**实时 cur 组**（`stream.perf` 增量累计，轮未结束即可展示）+ done 组（`message.complete` 整轮吸收后 cur 清零，不重复计数）；显示 = done + cur |
 
 **指标口径（最终）**：
 - 首 token 平均 = Σ(首个 delta 时刻 − started_at) / 有首包记录的调用数 = **大模型请求发出 → 返回第一个 token** 的纯 TTFT
 - TPS = Σ输出 token / Σ生成窗口（真流式 provider 用生成窗口；批量返回退化用 API 总时长，不含工具/排队）
+- **实时性**：每次 LLM API 调用完成即推送 `stream.perf` 增量，轮进行中即可看到首 token/TPS 更新；`message.complete` 整轮吸收收尾（防事件丢失兜底）
 
 ## 三、测试用例与执行结果
 
-### 3.1 聚合逻辑 pytest 单测（13 用例，`tests/test_tui_gateway_stream_perf.py`）
+### 3.1 聚合逻辑 pytest 单测（17 用例，`tests/test_tui_gateway_stream_perf.py`）
 
 测试方法：`StreamPerfCollector` 纯逻辑直测（turn 生命周期 / TTFT / 生成窗口 / 会话隔离 / 批量退化）。
 
@@ -77,17 +78,21 @@ cass-code（deepseek-v4-flash）实测为**批量返回**（2 个 delta 间隔 2
 | 11 | 真流式不退化：保留 16s 生成窗口 | 流式口径保持 | ✅ PASS |
 | 12 | 两会话互不串数据（TTFT/output 独立） | 会话隔离 | ✅ PASS |
 | 13 | 无 delta 调用不泄漏 pending（下轮干净） | 状态清理 | ✅ PASS |
+| 14 | on_update 在 API 完成后触发（增量结构正确） | **实时推送** | ✅ PASS |
+| 15 | 工具轮（无 delta）不触发 on_update | 实时推送口径 | ✅ PASS |
+| 16 | 每次 API 调用独立触发 on_update（增量语义） | 实时推送 | ✅ PASS |
+| 17 | set_on_update 替换回调 | 实时推送可配置 | ✅ PASS |
 
-**测试统计：13 passed, 0 failed**
+**测试统计：17 passed, 0 failed**
 
 ```
 $ venv/bin/python -m pytest tests/test_tui_gateway_stream_perf.py -q
-13 passed in 0.59s
+17 passed in 0.59s
 ```
 
-### 3.2 桌面插件单测（63 断言，`test_plugin.js`）
+### 3.2 桌面插件单测（76 断言，`test_plugin.js`）
 
-测试方法：esbuild bundle + SDK/React stub，覆盖 stream_perf 消费、token 累计、持久化、会话隔离、格式化。
+测试方法：esbuild bundle + SDK/React stub，覆盖 stream_perf 消费、**实时 cur 组**、token 累计、持久化、会话隔离、格式化。
 
 | 场景 | 覆盖点 | 结果 |
 |------|--------|------|
@@ -97,16 +102,18 @@ $ venv/bin/python -m pytest tests/test_tui_gateway_stream_perf.py -q
 | session.usage 仅更新 token | **旧 TPS 采样字段已移除**（无 rateCount） | ✅ PASS |
 | 无 session_id 事件忽略 | 事件隔离 | ✅ PASS |
 | 会话隔离 | A/B 互不串数据、无焦点空状态 | ✅ PASS |
-| 持久化 | 首 token / 生成窗口字段恢复保留 | ✅ PASS |
+| 持久化 | 首 token / 生成窗口字段恢复保留（cur 组清零） | ✅ PASS |
 | stream_perf 消费 | TTFT 累计、首 token 平均 = 2s、TPS = 33.3 tok/s | ✅ PASS |
 | 无 stream_perf 的 complete | 不污染指标（兼容旧后端） | ✅ PASS |
+| **实时 stream.perf** | cur 组累计、显示合并 done+cur（首 token 3s/TPS 33.3） | ✅ PASS |
+| **实时→complete 吸收** | done 吸收整轮、cur 清零、总数连续不重复 | ✅ PASS |
 | register + render 真实调用链 | jsx 双参数不崩（回归） | ✅ PASS |
 
-**测试统计：63 passed, 0 failed**
+**测试统计：76 passed, 0 failed**
 
 ```
 $ node ~/.hermes/desktop-plugins/composer-stats/test_plugin.js
-前端统计逻辑：63 通过 / 0 失败
+前端统计逻辑：76 通过 / 0 失败
 ```
 
 ### 3.3 真实 LLM 端到端验证（`/tmp/e2e_stream_perf.py`）
@@ -127,6 +134,23 @@ $ node ~/.hermes/desktop-plugins/composer-stats/test_plugin.js
 stream_perf = {'calls': 1, 'ttft_calls': 1, 'ttft_ms': 1550.0, 'gen_ms': 1551.2, 'output_tokens': 10}
 → 首 token 平均 = 1.55s；TPS = 6.4 tok/s
 端到端验证：PASS
+```
+
+### 3.5 实时推送端到端验证（`/tmp/e2e_stream_perf_realtime.py`）
+
+测试方法：注册官方 hook + `set_on_update` 挂实时回调，跑真实工具型 turn（多次 API 调用），验证**轮结束前**即收到增量，且与 `end_turn` 整轮汇总一致。
+
+| # | 验证项 | 结果 |
+|---|--------|------|
+| 1 | turn 进行中（未 complete）已收到实时增量（2 次 API 调用 → 2 条增量） | ✅ PASS |
+| 2 | 整轮汇总 vs 实时累计一致：ttft 3629.3/3629.3、gen 2344.3/2344.2、out 560/560 | ✅ PASS（不重复不丢失） |
+| 3 | 前端 cur 组在轮结束前即可展示首 token/TPS，complete 整轮吸收后清零 | ✅ PASS（插件单测场景 11 覆盖） |
+
+```
+turn 进行中（未 complete）实时增量数 = 2
+end_turn 整轮汇总 = {'calls': 2, 'ttft_calls': 2, 'ttft_ms': 3629.3, 'gen_ms': 2344.3, 'output_tokens': 560}
+整轮 vs 实时累计：ttft 3629.3 vs 3629.3 | gen 2344.3 vs 2344.2 | out 560 vs 560
+实时推送验证：PASS（轮结束前已收到增量）
 ```
 
 ### 3.4 回归测试

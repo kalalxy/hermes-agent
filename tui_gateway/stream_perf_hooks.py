@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +43,17 @@ class StreamPerfCollector:
     agent 线程同步回调，两者可能并发，统一走锁。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, on_update: Optional[Callable[[str, Dict[str, Any]], None]] = None) -> None:
         self._lock = threading.Lock()
         self._turns: Dict[str, Dict[str, Any]] = {}
         # (session_id, api_call_count) -> 首个 delta 时刻（epoch 秒）
         self._pending: Dict[Tuple[str, int], float] = {}
+        # 每次 API 调用完成聚合后回调（实时推送，增量语义）。签名 (agent_sid, 单次调用增量)。
+        self._on_update = on_update
+
+    def set_on_update(self, on_update: Optional[Callable[[str, Dict[str, Any]], None]]) -> None:
+        with self._lock:
+            self._on_update = on_update
 
     def begin_turn(self, sid: str) -> None:
         if not sid:
@@ -95,6 +101,22 @@ class StreamPerfCollector:
                 gen = api_dur
             turn["gen_ms"] += gen * 1000
             turn["output_tokens"] += max(0, int(output_tokens or 0))
+            # 实时推送（增量语义）：本次调用的 TTFT/生成窗口/输出 token 立即下发，
+            # 前端在轮结束前即可展示，不必等 message.complete。
+            if self._on_update is not None:
+                try:
+                    self._on_update(
+                        sid,
+                        {
+                            "calls": 1,
+                            "ttft_calls": 1,
+                            "ttft_ms": round(max(0.0, first - float(started_at)) * 1000, 1),
+                            "gen_ms": round(gen * 1000, 1),
+                            "output_tokens": max(0, int(output_tokens or 0)),
+                        },
+                    )
+                except Exception:
+                    logger.debug("stream_perf on_update callback failed", exc_info=True)
 
     def end_turn(self, sid: str) -> Optional[Dict[str, Any]]:
         if not sid:

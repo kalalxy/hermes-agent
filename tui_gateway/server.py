@@ -16,7 +16,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, NamedTuple, Optional
+from typing import Any, Callable, Dict, NamedTuple, Optional
 
 from agent.secret_scope import (
     build_profile_secret_scope,
@@ -55,10 +55,33 @@ from tui_gateway.transport import (
 logger = logging.getLogger(__name__)
 
 # 官方 observer hook 消费：LLM 流式性能指标（TTFT / 生成窗口 / 输出 token），
-# 幂等注册，数据经 message.complete 的 stream_perf 字段下发给前端。
+# 幂等注册，数据经 message.complete 的 stream_perf 字段与 stream.perf 实时事件下发。
 from tui_gateway.stream_perf_hooks import register_stream_perf_hooks
 
+# agent.session_id → UI sid 映射：hook 侧 session_id 是 agent 内部 id，实时事件
+# 需按 UI sid 路由到前端统计条。
+_AGENT_TO_UI: Dict[str, str] = {}
+_AGENT_TO_UI_LOCK = threading.Lock()
+
+
+def _on_stream_perf_update(agent_sid: str, perf: dict) -> None:
+    """每次 LLM API 调用完成 → 实时推 stream.perf（增量）到对应 UI 会话。
+
+    agent 线程（post_api_request 同步 invoke）触发；映射不存在时跳过，
+    由 message.complete 的整轮 stream_perf 兜底，保证最终数据一致。
+    """
+    with _AGENT_TO_UI_LOCK:
+        ui_sid = _AGENT_TO_UI.get(agent_sid)
+    if not ui_sid:
+        return
+    try:
+        _emit("stream.perf", ui_sid, {"perf": perf})
+    except Exception:
+        logger.debug("stream.perf emit failed", exc_info=True)
+
+
 _STREAM_PERF = register_stream_perf_hooks()
+_STREAM_PERF.set_on_update(_on_stream_perf_update)
 
 _hermes_home = get_hermes_home()
 load_hermes_dotenv(
@@ -11418,7 +11441,10 @@ def _run_prompt_submit(
     _emit("message.start", sid)
     # 聚合键必须用 agent.session_id：官方 hook（post_api_request / on_stream_delta）
     # 的 session_id 是 agent 内部会话 id，与 UI 侧 sid 不同。
-    _STREAM_PERF.begin_turn(getattr(agent, "session_id", "") or sid)
+    _agent_sid = getattr(agent, "session_id", "") or sid
+    with _AGENT_TO_UI_LOCK:
+        _AGENT_TO_UI[_agent_sid] = sid
+    _STREAM_PERF.begin_turn(_agent_sid)
 
     def run():
         # The conversation runs on a fresh thread, so ContextVars from the RPC
@@ -11906,9 +11932,12 @@ def _run_prompt_submit(
             payload = {"text": raw, "usage": _get_usage(agent), "status": status}
             # 本轮 LLM 流式性能指标（官方 hook 聚合：TTFT / 生成窗口 / 输出 token），
             # 供前端统计条展示准确的首 token 平均与 TPS。聚合键与 hook 侧一致。
-            _perf = _STREAM_PERF.end_turn(getattr(agent, "session_id", "") or sid)
+            _agent_sid = getattr(agent, "session_id", "") or sid
+            _perf = _STREAM_PERF.end_turn(_agent_sid)
             if _perf:
                 payload["stream_perf"] = _perf
+            with _AGENT_TO_UI_LOCK:
+                _AGENT_TO_UI.pop(_agent_sid, None)
             if last_reasoning:
                 payload["reasoning"] = last_reasoning
             if status_note:

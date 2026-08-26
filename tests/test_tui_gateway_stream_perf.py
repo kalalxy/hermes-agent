@@ -133,6 +133,54 @@ class TestGenWindow:
         assert summary["gen_ms"] == pytest.approx(16000.0)  # 16s 窗口，不退化
 
 
+class TestRealtimeUpdate:
+    def test_on_update_fires_increment_after_api_done(self):
+        updates = []
+        c = StreamPerfCollector(on_update=lambda sid, perf: updates.append((sid, dict(perf))))
+        c.begin_turn("s1")
+        c.on_first_delta("s1", 0, 114.0)
+        c.on_api_done("s1", 0, 100.0, 130.0, 300)
+        assert len(updates) == 1
+        sid, perf = updates[0]
+        assert sid == "s1"
+        assert perf["calls"] == 1
+        assert perf["ttft_calls"] == 1
+        assert perf["ttft_ms"] == pytest.approx(14000.0)
+        assert perf["gen_ms"] == pytest.approx(16000.0)
+        assert perf["output_tokens"] == 300
+
+    def test_on_update_not_fired_for_tool_only_call(self):
+        updates = []
+        c = StreamPerfCollector(on_update=lambda sid, perf: updates.append(perf))
+        c.begin_turn("s1")
+        c.on_api_done("s1", 0, 100.0, 130.0, 50)  # 无 delta（工具轮）
+        assert updates == []
+
+    def test_on_update_fires_per_call(self):
+        updates = []
+        c = StreamPerfCollector(on_update=lambda sid, perf: updates.append(dict(perf)))
+        c.begin_turn("s1")
+        c.on_first_delta("s1", 0, 114.0)
+        c.on_api_done("s1", 0, 100.0, 130.0, 300)
+        c.on_first_delta("s1", 1, 133.0)
+        c.on_api_done("s1", 1, 131.0, 145.0, 400)
+        assert len(updates) == 2
+        # 增量语义：每次调用独立推送
+        assert updates[0]["ttft_ms"] == pytest.approx(14000.0)
+        assert updates[1]["ttft_ms"] == pytest.approx(2000.0)
+
+    def test_set_on_update_replaces_callback(self):
+        first = []
+        second = []
+        c = StreamPerfCollector(on_update=lambda sid, perf: first.append(perf))
+        c.set_on_update(lambda sid, perf: second.append(perf))
+        c.begin_turn("s1")
+        c.on_first_delta("s1", 0, 114.0)
+        c.on_api_done("s1", 0, 100.0, 130.0, 300)
+        assert first == []
+        assert len(second) == 1
+
+
 class TestSessionIsolation:
     def test_sessions_do_not_cross_talk(self):
         c = _collector()
