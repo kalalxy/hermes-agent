@@ -6988,6 +6988,10 @@ class AIAgent:
                 **self._stream_hook_base_payload(),
                 delta=text,
                 kind="text",
+                # 首 token / 速率测量依赖精确的 token 到达时刻。observer 回调经
+                # 异步队列派发（worker 线程），回调时刻相对真实到达有不可控延迟，
+                # 故在此（同步 token 路径）记录时间戳随 payload 下发。
+                delta_at=time.time(),
             )
         except Exception:
             logger.debug("on_stream_delta plugin hook enqueue failed", exc_info=True)

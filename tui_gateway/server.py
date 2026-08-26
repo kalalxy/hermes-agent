@@ -54,6 +54,12 @@ from tui_gateway.transport import (
 
 logger = logging.getLogger(__name__)
 
+# 官方 observer hook 消费：LLM 流式性能指标（TTFT / 生成窗口 / 输出 token），
+# 幂等注册，数据经 message.complete 的 stream_perf 字段下发给前端。
+from tui_gateway.stream_perf_hooks import register_stream_perf_hooks
+
+_STREAM_PERF = register_stream_perf_hooks()
+
 _hermes_home = get_hermes_home()
 load_hermes_dotenv(
     hermes_home=_hermes_home, project_env=Path(__file__).parent.parent / ".env"
@@ -11410,6 +11416,9 @@ def _run_prompt_submit(
         len(images),
     )
     _emit("message.start", sid)
+    # 聚合键必须用 agent.session_id：官方 hook（post_api_request / on_stream_delta）
+    # 的 session_id 是 agent 内部会话 id，与 UI 侧 sid 不同。
+    _STREAM_PERF.begin_turn(getattr(agent, "session_id", "") or sid)
 
     def run():
         # The conversation runs on a fresh thread, so ContextVars from the RPC
@@ -11895,6 +11904,11 @@ def _run_prompt_submit(
                 status = "complete"
 
             payload = {"text": raw, "usage": _get_usage(agent), "status": status}
+            # 本轮 LLM 流式性能指标（官方 hook 聚合：TTFT / 生成窗口 / 输出 token），
+            # 供前端统计条展示准确的首 token 平均与 TPS。聚合键与 hook 侧一致。
+            _perf = _STREAM_PERF.end_turn(getattr(agent, "session_id", "") or sid)
+            if _perf:
+                payload["stream_perf"] = _perf
             if last_reasoning:
                 payload["reasoning"] = last_reasoning
             if status_note:
