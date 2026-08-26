@@ -172,6 +172,30 @@ end_turn 整轮汇总 = {'calls': 2, 'ttft_calls': 2, 'ttft_ms': 3629.3, 'gen_ms
 
 > 排查记录：初版 TTFT 偏大 2-3.5x，逐层定位——① started_at 含 agent 请求准备时间 → 改用 `request_sent_at`（create() 前，HTTP 发出时刻）；② reasoning 模型（cass-code deepseek-v4-flash 实测 27 个 reasoning chunk 后才出文本）首个文本 delta 远晚于首包 → 改用 `first_chunk_at`（首个 chunk，含 reasoning 首包）作首 token 时刻。两处修正后 TTFT 从 1.4-2.0s 收敛到 0.73-1.45s，与同规模基线一致。
 
+### 3.7 thinking（reasoning）首包验证（`/tmp/verify_thinking_ttft.py`，真实 provider）
+
+测试方法：同一真实调用中对比裸 HTTP 的 reasoning 首包 / 首个文本 delta / agent stream_perf 的 TTFT，确认首 token 按 thinking 首包计算。
+
+| 验证项 | 数值 | 结果 |
+|--------|------|------|
+| 裸 HTTP reasoning 首包（首个 chunk，含 thinking） | 1165ms | — |
+| 裸 HTTP 首个文本 chunk（thinking 结束后） | 1692ms（49 个 reasoning chunk） | — |
+| agent stream_perf TTFT（首个 delta 事件明细） | 1304.4ms = first_chunk_at − request_sent_at（`USES_CHUNK True`） | ✅ 按 thinking 首包计算 |
+| 首个文本 delta 基线 | 1621ms | 未采用（正确，thinking 才是首 token） |
+
+**验证：PASS ✅** —— TTFT 精确等于 thinking 首包时刻，比首个文本 delta 早约 317ms，符合哥哥口径「thinking 输出的内容也算首 token」。
+
+### 3.8 持久化版本迁移（插件，82 断言内）
+
+| 验证项 | 结果 |
+|--------|------|
+| 旧版本数据（无 storageVersion，firstTokenMs=12000 污染值）恢复 → 首 token/TPS 字段清零 | ✅ PASS |
+| 旧版本其他累计（轮/步/耗时/token）保留 | ✅ PASS |
+| 新版本数据（storageVersion=2）正常恢复 | ✅ PASS |
+| serializeStats 带 storageVersion | ✅ PASS |
+
+**背景**：截图显示「首 token 12s」而 LLM 0ms/工具 234ms——桌面 App 未重启（gateway 11:17 启动 < 代码 12:21 merge），跑的是旧算法；且旧算法污染值存于插件持久化，重启后若不迁移会继续显示。版本迁移保证重启后从零重新按权威口径累计。
+
 ### 3.4 回归测试
 
 | 范围 | 结果 |
